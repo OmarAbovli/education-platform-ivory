@@ -95,12 +95,13 @@ export async function listBunnyLibraries(accountKey?: string) {
   }
 }
 
-export async function saveBunnyConfig(apiKey: string, libraryId: string) {
+export async function saveBunnyConfig(apiKey: string, libraryId: string, cdnHostname?: string) {
   try {
     const teacherId = await requireTeacherId()
     await sql`
       UPDATE users 
       SET bunny_api_key = ${apiKey}, bunny_library_id = ${libraryId}
+        ${cdnHostname !== undefined ? sql`, bunny_cdn_hostname = ${cdnHostname}` : sql``}
       WHERE id = ${teacherId}
     `
     return { ok: true }
@@ -109,43 +110,58 @@ export async function saveBunnyConfig(apiKey: string, libraryId: string) {
   }
 }
 
-export async function getBunnyConfig(): Promise<{ apiKey: string | null; libraryId: string | null; mainKey: string | null } | null> {
+export async function getBunnyConfig(): Promise<{ apiKey: string | null; libraryId: string | null; mainKey: string | null; cdnHostname: string | null } | null> {
   try {
     const teacherId = await requireTeacherId()
-    const [user] = await sql`SELECT bunny_api_key, bunny_library_id, bunny_main_api_key FROM users WHERE id = ${teacherId}` as any[]
+    const [user] = await sql`SELECT bunny_api_key, bunny_library_id, bunny_main_api_key, bunny_cdn_hostname FROM users WHERE id = ${teacherId}` as any[]
 
     // Fallback to env if not in DB (for backward compatibility/admin usage)
     const apiKey = user?.bunny_api_key || process.env.BUNNY_STREAM_API_KEY
     const libraryId = user?.bunny_library_id || process.env.BUNNY_STREAM_LIBRARY_ID
     const mainKey = user?.bunny_main_api_key
+    const cdnHostname = user?.bunny_cdn_hostname || process.env.BUNNY_CDN_HOSTNAME || null
 
-    if (!apiKey || !libraryId) return { apiKey: null, libraryId: null, mainKey }
-    return { apiKey, libraryId, mainKey }
+    if (!apiKey || !libraryId) return { apiKey: null, libraryId: null, mainKey, cdnHostname }
+    return { apiKey, libraryId, mainKey, cdnHostname }
   } catch {
     return null
   }
 }
 
-function buildThumbUrl(libraryId: string, item: BunnyVideoApiItem) {
+function buildThumbUrl(libraryId: string, item: BunnyVideoApiItem, cdnHostname?: string | null) {
+  const host = cdnHostname || `vz-${libraryId}.b-cdn.net`
   if (item.thumbnailFileName) {
-    return `https://vz-${libraryId}.b-cdn.net${item.thumbnailFileName.startsWith("/") ? "" : "/"}${item.thumbnailFileName}`
+    return `https://${host}${item.thumbnailFileName.startsWith("/") ? "" : "/"}${item.thumbnailFileName}`
   }
-  return `https://vz-${libraryId}.b-cdn.net/${item.guid}/thumbnail.jpg`
+  return `https://${host}/${item.guid}/thumbnail.jpg`
 }
 
 // -- Actions --
 
 export async function createBunnyVideo(title: string, targetLibraryId?: string) {
+  console.log("createBunnyVideo: Request received", { title, targetLibraryId })
   const config = await getBunnyConfig()
+  console.log("createBunnyVideo: Config found", {
+    hasApiKey: !!config?.apiKey,
+    libraryId: config?.libraryId,
+    hasMainKey: !!config?.mainKey
+  })
+
   if (!config) return { ok: false, error: "Bunny.net not configured" }
 
   const apiKey = config.apiKey
   const libraryId = targetLibraryId || config.libraryId
 
-  if (!apiKey || !libraryId) return { ok: false, error: "Missing Bunny API Key or Library ID" }
+  if (!apiKey || !libraryId) {
+    console.error("createBunnyVideo: Missing credentials", { apiKey: !!apiKey, libraryId })
+    return { ok: false, error: "Missing Bunny API Key or Library ID" }
+  }
 
   try {
-    const res = await fetch(`https://video.bunnycdn.com/library/${libraryId}/videos`, {
+    const url = `https://video.bunnycdn.com/library/${libraryId}/videos`
+    console.log("createBunnyVideo: Fetching Bunny API", { url })
+
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
         accept: 'application/json',
@@ -157,13 +173,28 @@ export async function createBunnyVideo(title: string, targetLibraryId?: string) 
 
     if (!res.ok) {
       const text = await res.text()
+      console.error("createBunnyVideo: API returned error", { status: res.status, text })
       return { ok: false, error: `Create failed: ${res.status} ${text}` }
     }
 
     const data = await res.json()
+    console.log("createBunnyVideo: Success", { guid: data.guid })
     return { ok: true, guid: data.guid, libraryId, apiKey }
   } catch (e: any) {
-    return { ok: false, error: e.message }
+    console.error("createBunnyVideo: Catch block error", e)
+    let message = e.message || "Unknown error"
+    if (message.includes("ConnectTimeoutError") || message.includes("fetch failed")) {
+      message = "Connection Timeout: Server could not reach Bunny.net API. Check your internet or VPN."
+    }
+    return {
+      ok: false,
+      error: message,
+      details: {
+        name: e.name,
+        stack: e.stack,
+        cause: e.cause ? String(e.cause) : undefined
+      }
+    }
   }
 }
 
@@ -199,10 +230,11 @@ export async function listBunnyVideos(params?: {
 
   const data = (await res.json()) as BunnyListResponse
 
+  const cdnHostname = config.cdnHostname
   const items = data.items.map((it) => {
     const embedUrl = buildBunnyEmbedUrl(libraryId!, it.guid)
-    const hlsUrl = buildBunnyHlsUrl(libraryId!, it.guid)
-    const thumbnailUrl = buildThumbUrl(libraryId!, it)
+    const hlsUrl = buildBunnyHlsUrl(libraryId!, it.guid, cdnHostname)
+    const thumbnailUrl = buildThumbUrl(libraryId!, it, cdnHostname)
     return {
       id: it.guid,
       title: it.title,

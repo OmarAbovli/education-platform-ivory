@@ -115,11 +115,12 @@ export function buildBunnyEmbedUrl(libraryId: string, videoId: string) {
 }
 
 /** Heuristic HLS URL builder (prefer Bunny-provided Direct Play URLs in production). */
-export function buildBunnyHlsUrl(libraryId: string, videoId: string): string {
+export function buildBunnyHlsUrl(libraryId: string, videoId: string, customHost?: string | null): string {
+  if (customHost) return `https://${customHost}/${videoId}/playlist.m3u8`
   const host =
     typeof process !== "undefined" && (process as any).env ? (process as any).env.BUNNY_CDN_HOSTNAME : undefined
   if (host) return `https://${host}/${videoId}/playlist.m3u8`
-  return `https://vz-${libraryId}-${videoId}.b-cdn.net/playlist.m3u8`
+  return `https://vz-${libraryId}.b-cdn.net/${videoId}/playlist.m3u8`
 }
 
 /** Normalize a direct play URL (HLS/MP4). If relative and a custom CDN is configured, prefix it. */

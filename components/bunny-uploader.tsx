@@ -10,11 +10,12 @@ import { Upload, X, CheckCircle, Loader2 } from "lucide-react"
 import { useUploadProgress } from "./upload-progress-provider"
 
 type BunnyUploaderProps = {
-    onUploadComplete: (videoId: string, directPlayUrl: string) => void
+    onUploadComplete: (videoId: string, directPlayUrl: string, libraryId: string) => void
     disabled?: boolean
+    onUploadStart?: () => void
 }
 
-export function BunnyUploader({ onUploadComplete, disabled, targetLibraryId }: BunnyUploaderProps & { targetLibraryId?: string }) {
+export function BunnyUploader({ onUploadComplete, disabled, targetLibraryId, onUploadStart }: BunnyUploaderProps & { targetLibraryId?: string }) {
     const [file, setFile] = useState<File | null>(null)
     const [isInternalUploading, setIsInternalUploading] = useState(false)
     const [tempTitle, setTempTitle] = useState("")
@@ -28,19 +29,25 @@ export function BunnyUploader({ onUploadComplete, disabled, targetLibraryId }: B
         }
 
         const uploadId = Math.random().toString(36).substring(7)
+        console.log("BunnyUploader: Starting upload process", { uploadId, tempTitle, fileName: file.name })
         addUpload(uploadId, tempTitle)
         setIsInternalUploading(true)
+        if (onUploadStart) onUploadStart()
 
         try {
             // 1. Create Video Placeholder
-            const createRes = await createBunnyVideo(tempTitle, targetLibraryId)
+            const createRes = await createBunnyVideo(tempTitle, targetLibraryId) as any
+            console.log("BunnyUploader: createBunnyVideo response:", createRes)
             if (!createRes.ok || !createRes.guid) {
                 const err = createRes.error || "Failed to create video placeholder"
+                console.error("BunnyUploader: Detailed Server Error:", createRes)
                 setUploadStatus(uploadId, "error", err)
+                toast.error(err) // Added toast here
                 throw new Error(err)
             }
 
             const { guid, libraryId, apiKey } = createRes as any
+            console.log("BunnyUploader: Placeholder created, starting XHR PUT", { guid, libraryId })
 
             // 2. Upload File via PUT
             const xhr = new XMLHttpRequest()
@@ -58,11 +65,13 @@ export function BunnyUploader({ onUploadComplete, disabled, targetLibraryId }: B
             }
 
             xhr.onload = () => {
+                console.log("BunnyUploader: XHR onload triggered", { status: xhr.status, statusText: xhr.statusText })
                 if (xhr.status >= 200 && xhr.status < 300) {
                     setUploadStatus(uploadId, "completed")
                     toast.success(`Upload complete: ${tempTitle}`)
                     const playUrl = `https://iframe.mediadelivery.net/play/${libraryId}/${guid}`
-                    onUploadComplete(guid, playUrl)
+                    console.log("BunnyUploader: Calling onUploadComplete", { guid, playUrl, libraryId })
+                    onUploadComplete(guid, playUrl, libraryId.toString())
                     setIsInternalUploading(false)
                     setFile(null)
                     setTempTitle("")
@@ -76,6 +85,7 @@ export function BunnyUploader({ onUploadComplete, disabled, targetLibraryId }: B
 
             xhr.onerror = () => {
                 const err = "Network error during upload"
+                console.error("BunnyUploader: XHR onerror", err)
                 setUploadStatus(uploadId, "error", err)
                 toast.error(err)
                 setIsInternalUploading(false)
@@ -84,6 +94,7 @@ export function BunnyUploader({ onUploadComplete, disabled, targetLibraryId }: B
             xhr.send(file)
 
         } catch (e: any) {
+            console.error("BunnyUploader: Catch block error:", e)
             setIsInternalUploading(false)
         }
     }

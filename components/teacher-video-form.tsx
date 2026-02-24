@@ -46,7 +46,9 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
   // Library selection state
   const [libraries, setLibraries] = useState<any[]>([])
   const [selectedLibraryId, setSelectedLibraryId] = useState<string>("")
+  const [uploadedLibraryId, setUploadedLibraryId] = useState<string>("")
   const [loadingLibs, setLoadingLibs] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
 
   // Fetch libraries on mount
   useEffect(() => {
@@ -81,6 +83,10 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
   const [metaFetched, setMetaFetched] = useState(false)
 
   const [aiProvider, setAiProvider] = useState<"pollinations" | "getimg" | "gemini">("pollinations")
+
+  useEffect(() => {
+    console.log("TeacherVideoForm: state changed", { videoUrl, sourceType, uploadedLibraryId })
+  }, [videoUrl, sourceType, uploadedLibraryId])
 
   function toggleGrade(val: number) {
     setGrades((prev) => (prev.includes(val) ? prev.filter((g) => g !== val) : [...prev, val]))
@@ -195,8 +201,15 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
     <form
       onSubmit={(e) => {
         e.preventDefault()
-        if (!packageId) return
+        console.log("Form onSubmit triggered. packageId:", packageId)
+        if (!packageId) {
+          console.log("Returning early: packageId is missing")
+          return
+        }
         startTransition(async () => {
+          console.log("Transition started. Input parameters:", {
+            title, category, grades, videoUrl, packageId, isFree, sourceType, directPlayUrl
+          })
           const res = await uploadVideo({
             title,
             category,
@@ -208,10 +221,12 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
             thumbnailUrl,
             sourceType,
             directPlayUrl: directPlayUrl || undefined,
+            bunnyLibraryId: uploadedLibraryId || (sourceType === "bunny_id" ? selectedLibraryId : undefined),
             maxWatchCount,
             watchLimitEnabled,
           })
           if (res?.ok) {
+            console.log("Video saved successfully:", res)
             toast({
               title: "Video saved",
               description: isFree
@@ -233,6 +248,7 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
             setMetaDurationSec(undefined)
             setMetaFetched(false)
           } else {
+            console.error("Video save failed. Result:", res)
             toast({ title: "Error", description: res?.error ?? "Upload failed", variant: "destructive" })
           }
         })
@@ -425,20 +441,27 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
 
         {sourceType === "bunny_upload" && (
           <div className="mt-4">
-            <BunnyUploader onUploadComplete={(vid, playUrl) => {
-              setSourceType("bunny_id") // Switch to ID mode after upload
-              setVideoUrl(vid)
-              setDirectPlayUrl(playUrl)
-              toast({ title: "Upload Successful", description: "Video ID filled. You can now fetch metadata or save." })
-              // Optional: auto fetch meta?
-              startTransition(async () => {
-                const res = await getBunnyVideoMetadata(vid)
-                if (res.ok) {
-                  setMetaDurationSec(res.durationSeconds)
-                  setThumbnailUrl(res.thumbnailUrl || "")
-                }
-              })
-            }} />
+            <BunnyUploader
+              onUploadStart={() => setIsUploading(true)}
+              onUploadComplete={(vid, playUrl, libId) => {
+                console.log("TeacherVideoForm: onUploadComplete triggered", { vid, playUrl, libId })
+                setSourceType("bunny_id") // Switch to ID mode after upload
+                setVideoUrl(vid)
+                setDirectPlayUrl(playUrl)
+                setUploadedLibraryId(libId)
+                setIsUploading(false)
+                toast({ title: "Upload Successful", description: "Video ID filled. You can now fetch metadata or save." })
+                // Optional: auto fetch meta?
+                console.log("TeacherVideoForm: Starting metadata fetch transition")
+                startTransition(async () => {
+                  const res = await getBunnyVideoMetadata(vid)
+                  console.log("TeacherVideoForm: metadata fetch result:", res)
+                  if (res.ok) {
+                    setMetaDurationSec(res.durationSeconds)
+                    setThumbnailUrl(res.thumbnailUrl || "")
+                  }
+                })
+              }} />
           </div>
         )}
 
@@ -517,7 +540,7 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
         )}
       </div>
 
-      <Button disabled={isPending || !packageId} type="submit">
+      <Button disabled={isPending || isUploading || !packageId || !title || !videoUrl} type="submit">
         {isPending ? "Saving..." : "Save Video"}
       </Button>
       <p className="text-xs text-muted-foreground">

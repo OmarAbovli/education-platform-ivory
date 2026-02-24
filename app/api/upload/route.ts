@@ -15,25 +15,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Only image files are allowed" }, { status: 400 })
     }
 
+    const token = process.env.BLOB_READ_WRITE_TOKEN
+    if (!token) {
+      console.error("❌ BLOB_READ_WRITE_TOKEN is missing")
+      return NextResponse.json(
+        { ok: false, error: "Server is not configured for file uploads. BLOB_READ_WRITE_TOKEN is missing." },
+        { status: 500 }
+      )
+    }
+
     const ext = file.name.split(".").pop() || "jpg"
     const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "")
     const filename = `avatars/${randomUUID()}.${safeExt}`
 
-    // Check for token existence manually for debugging
-    const token = process.env.BLOB_READ_WRITE_TOKEN
-    if (!token) {
-      console.error("❌ BLOB_READ_WRITE_TOKEN is missing")
-    } else {
-      console.log("✅ BLOB_READ_WRITE_TOKEN found, length:", token.length)
-      if (token.startsWith('"') || token.startsWith("'")) {
-        console.warn("⚠️ Token starts with quote, this might be an issue")
-      }
-    }
-
     // Upload to Vercel Blob as public file
+    // Pass token explicitly so it works locally as well as in production
     const uploaded = await put(filename, file, {
       access: "public",
       addRandomSuffix: false,
+      token,
     })
 
     console.log("✅ Upload success:", uploaded.url)
@@ -41,13 +41,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, url: uploaded.url })
   } catch (e: any) {
     console.error("❌ Upload error details:", e)
-    console.error("❌ Token used (masked):", process.env.BLOB_READ_WRITE_TOKEN ? `${process.env.BLOB_READ_WRITE_TOKEN.substring(0, 10)}...` : "None")
 
     return NextResponse.json(
       {
         ok: false,
-        error:
-          "Upload failed. If running locally, ensure Vercel Blob is configured or set BLOB_READ_WRITE_TOKEN in your env.",
+        error: "Upload failed: " + (e?.message ?? "Unknown error"),
       },
       { status: 500 },
     )

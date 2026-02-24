@@ -59,6 +59,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 
 import { checkVideoAccess } from "@/server/student-queries"
+import { getVideoComments } from "@/server/video-comments-queries"
+import { VideoComments } from "@/components/video-comments"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -106,11 +108,12 @@ export default async function WatchPage({ params }: PageProps) {
     )
   }
 
-  // Fetch access, resources, and quizzes in parallel
-  const [access, resources, quizzes] = await Promise.all([
+  // Fetch access, resources, quizzes, and comments in parallel
+  const [access, resources, quizzes, comments] = await Promise.all([
     user ? checkVideoAccess(videoId, user.id) : Promise.resolve({ allowed: false, reason: 'login-required' as const }),
     getResourcesForVideo(videoId),
     getQuizzesForVideo(videoId),
+    getVideoComments(videoId),
   ])
 
   const waUrl = makeWaUrl(video.title, video.teacher_name)
@@ -240,6 +243,16 @@ export default async function WatchPage({ params }: PageProps) {
             </div>
           </div>
         )}
+
+        {/* Comments Section */}
+        <div className="mt-8 border-t pt-8">
+          <VideoComments
+            videoId={videoId}
+            comments={comments}
+            currentUserId={user?.id}
+            currentUserRole={user?.role}
+          />
+        </div>
       </div>
     </main>
   )

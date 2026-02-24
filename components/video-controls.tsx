@@ -18,7 +18,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { 
+import {
   PlayCircle,
   Pause,
   Volume2,
@@ -124,7 +124,7 @@ export default function VideoControls({
   // التحكم في التشغيل
   const togglePlay = useCallback(() => {
     if (!videoRef.current) return
-    
+
     if (videoRef.current.paused) {
       videoRef.current.play()
       setIsPlaying(true)
@@ -160,7 +160,7 @@ export default function VideoControls({
   // كتم الصوت
   const toggleMute = useCallback(() => {
     if (!videoRef.current) return
-    
+
     if (isMuted) {
       videoRef.current.volume = volume || 0.5
       setIsMuted(false)
@@ -173,7 +173,7 @@ export default function VideoControls({
   // ملء الشاشة
   const toggleFullscreen = useCallback(() => {
     if (!containerRef.current) return
-    
+
     if (!document.fullscreenElement) {
       containerRef.current.requestFullscreen()
       setIsFullscreen(true)
@@ -186,7 +186,7 @@ export default function VideoControls({
   // Picture in Picture
   const togglePiP = useCallback(async () => {
     if (!videoRef.current) return
-    
+
     try {
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture()
@@ -217,11 +217,11 @@ export default function VideoControls({
   // إظهار/إخفاء الكنترولز
   const handleMouseMove = useCallback(() => {
     setShowControls(true)
-    
+
     if (controlsTimeoutRef.current) {
       clearTimeout(controlsTimeoutRef.current)
     }
-    
+
     controlsTimeoutRef.current = setTimeout(() => {
       if (isPlaying) {
         setShowControls(false)
@@ -235,7 +235,7 @@ export default function VideoControls({
     const hours = Math.floor(seconds / 3600)
     const mins = Math.floor((seconds % 3600) / 60)
     const secs = Math.floor(seconds % 60)
-    
+
     if (hours > 0) {
       return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
     }
@@ -246,8 +246,18 @@ export default function VideoControls({
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (!videoRef.current) return
-      
-      switch(e.key) {
+
+      // Ignore if user is typing in an input or textarea
+      const target = e.target as HTMLElement
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return
+      }
+
+      switch (e.key) {
         case ' ':
         case 'k':
           e.preventDefault()
@@ -313,7 +323,7 @@ export default function VideoControls({
           break
       }
     }
-    
+
     window.addEventListener('keydown', handleKeyPress)
     return () => window.removeEventListener('keydown', handleKeyPress)
   }, [togglePlay, skip, handleVolumeChange, volume, toggleFullscreen, toggleMute, restart])
@@ -402,7 +412,7 @@ export default function VideoControls({
   }, [videoUrl])
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className={cn(
         "relative bg-black rounded-lg overflow-hidden group",
@@ -470,7 +480,7 @@ export default function VideoControls({
               <div className="absolute inset-0 bg-white/10 rounded-full overflow-hidden">
                 <div className="h-full bg-white/20" style={{ width: `${buffered}%` }} />
               </div>
-              
+
               {/* السلايدر */}
               <Slider
                 value={[currentProgress]}
@@ -479,14 +489,14 @@ export default function VideoControls({
                 step={0.1}
                 className="relative z-10 cursor-pointer"
               />
-              
+
               {/* معاينة الوقت عند التمرير */}
               <div className="absolute -top-8 left-0 bg-black/90 text-white text-xs px-2 py-1 rounded opacity-0 group-hover/progress:opacity-100 pointer-events-none transition-opacity"
                 style={{ left: `${currentProgress}%`, transform: 'translateX(-50%)' }}>
                 {formatTime(currentTime)}
               </div>
             </div>
-            
+
             {/* الوقت */}
             <div className="flex justify-between text-xs text-white/70">
               <span className="font-mono">{formatTime(currentTime)}</span>
@@ -639,7 +649,7 @@ export default function VideoControls({
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
-                
+
                 <div className={cn(
                   "overflow-hidden transition-all",
                   showVolumeSlider ? "w-24" : "w-0"

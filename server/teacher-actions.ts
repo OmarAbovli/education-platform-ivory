@@ -9,8 +9,9 @@ import { getCurrentUser } from "@/lib/auth"
 import { normalizeGoogleDriveUrl, isGoogleDriveUrl } from "@/lib/gdrive"
 import { isYouTubeUrl, toYouTubeEmbed } from "@/lib/youtube"
 import { isVimeoUrl, normalizeVimeoInput } from "@/lib/vimeo"
-import { isBunnyUrl, normalizeBunnyInput, normalizeBunnyDirectPlayUrl, buildBunnyHlsUrl } from "@/lib/bunny"
+import { isBunnyUrl, normalizeBunnyInput, normalizeBunnyDirectPlayUrl, buildBunnyHlsUrl, isBunnyIframePage } from "@/lib/bunny"
 import { createQrToken } from "@/server/qr-actions"
+import { getBunnyConfig } from "@/server/bunny-actions"
 
 export type StudentClassification = "center" | "online"
 
@@ -136,8 +137,10 @@ async function verifyBunnyVideoExists(libraryId: string, videoId: string): Promi
 }
 
 export async function uploadVideo(input: UploadVideoInput) {
+  console.log("Server action: uploadVideo called with input:", JSON.stringify(input, null, 2))
   try {
     const teacherId = await requireTeacherId()
+    console.log("Teacher ID authenticated:", teacherId)
     const id = "v_" + randomUUID()
 
     let normalizedUrl = (input.videoUrl ?? "").trim()
@@ -146,8 +149,9 @@ export async function uploadVideo(input: UploadVideoInput) {
     if (input.sourceType === "bunny_id" || input.sourceType === "bunny_upload") {
       const videoId = sanitizeBunnyVideoId(normalizedUrl)
 
-      // Use provided library ID or fallback to env
-      const libraryId = input.bunnyLibraryId || process.env.BUNNY_STREAM_LIBRARY_ID
+      // Use provided library ID or fallback to DB or env
+      const config = await getBunnyConfig()
+      const libraryId = input.bunnyLibraryId || config?.libraryId || process.env.BUNNY_STREAM_LIBRARY_ID
 
       if (!libraryId) {
         return { ok: false as const, error: "BUNNY_STREAM_LIBRARY_ID is not configured and no library ID provided." }
@@ -156,14 +160,12 @@ export async function uploadVideo(input: UploadVideoInput) {
         return { ok: false as const, error: "Please provide a valid Bunny Video ID." }
       }
 
-      if (input.directPlayUrl?.trim()) {
+      if (input.directPlayUrl?.trim() && !isBunnyIframePage(input.directPlayUrl)) {
         normalizedUrl = normalizeBunnyDirectPlayUrl(input.directPlayUrl)
       } else {
-        // We construct the "Direct Play" URL which is often used as the canonical URL in the DB
-        // For HLS playback, the frontend player often needs to resolve this or we store the .m3u8 directly?
-        // Looking at existing code, `buildBunnyHlsUrl` likely returns the .m3u8 or Player URL.
-        // Assuming `buildBunnyHlsUrl` constructs standard stream url.
-        normalizedUrl = buildBunnyHlsUrl(libraryId, videoId)
+        // Construct the HLS Playlist URL (.m3u8) using the correct CDN hostname
+        const cdnHostname = config?.cdnHostname ?? null
+        normalizedUrl = buildBunnyHlsUrl(libraryId, videoId, cdnHostname)
       }
     } else {
       if (
@@ -594,12 +596,6 @@ export async function getMyStudentsFiltered(params?: {
     if (classification !== "all") {
       whereClauses.push(`u.classification = '${classification}'`)
     }
-    let searchClause = ""
-    if (q) {
-      searchClause = `AND (u.name ILIKE '%' || ${q} || '%' OR u.username ILIKE '%' || ${q} || '%')`
-    }
-    const wherePrefix = whereClauses.length > 0 ? `AND ${whereClauses.join(" AND ")}` : ""
-
     const rows = (await sql`
       SELECT
         u.id,
@@ -615,8 +611,8 @@ export async function getMyStudentsFiltered(params?: {
       LEFT JOIN student_package_access spa
         ON spa.student_id = ts.student_id AND spa.teacher_id = ts.teacher_id
       WHERE ts.teacher_id = ${teacherId} AND ts.status = 'active'
-      ${sql.unsafe(wherePrefix)}
-      ${sql.unsafe(searchClause)}
+      AND (u.classification = ${classification} OR ${classification} = 'all')
+      AND (u.name ILIKE '%' || ${q} || '%' OR u.username ILIKE '%' || ${q} || '%')
       GROUP BY u.id, u.name, u.username, u.grade, u.phone, u.guardian_phone, u.classification
       ORDER BY u.created_at DESC;
     `) as any[]

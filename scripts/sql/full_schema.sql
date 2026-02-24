@@ -140,6 +140,14 @@ CREATE TABLE IF NOT EXISTS photo_comments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS video_comments (
+  id TEXT PRIMARY KEY,
+  video_id TEXT NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS photo_uploads (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   student_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -566,6 +574,7 @@ CREATE INDEX IF NOT EXISTS idx_purchases_status ON purchases (status);
 CREATE INDEX IF NOT EXISTS idx_video_watch_tracking_student ON video_watch_tracking(student_id);
 CREATE INDEX IF NOT EXISTS idx_practice_sessions_student ON practice_sessions(student_id);
 CREATE INDEX IF NOT EXISTS idx_xp_logs_user ON xp_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_video_comments_video_id ON video_comments(video_id);
 
 -- ========================================================
 -- 8. VIEWS
