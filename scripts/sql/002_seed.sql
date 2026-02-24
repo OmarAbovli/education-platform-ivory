@@ -1,0 +1,2 @@
+-- Seed file cleaned: demo/test accounts removed.
+-- If you need to re-seed demo data for local development, re-add entries intentionally.

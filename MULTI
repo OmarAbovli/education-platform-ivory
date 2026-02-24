@@ -1,0 +1,149 @@
+// components/site-header.tsx
+"use client"
+
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { cn } from "@/lib/utils"
+import DarkModeToggle from "@/components/dark-mode-toggle"
+import { Button } from "@/components/ui/button"
+
+const links = [
+  { href: "/teachers", label: "Teachers" },
+  { href: "/photos", label: "Photos" },
+  { href: "/login", label: "Login" },
+]
+
+export default function SiteHeader() {
+  const pathname = usePathname()
+  return (
+    <header className="sticky top-0 z-40 w-full border-b bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
+        <Link href="/" className="flex items-center gap-2">
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-md border bg-card text-xs font-bold">
+            T
+          </span>
+          <span className="text-sm font-semibold">Tafawok</span>
+        </Link>
+
+        <nav className="ml-auto hidden items-center gap-1 sm:flex">
+          {links.map(({ href, label }) => {
+            const active = pathname === href
+            return (
+              <Link key={href} href={href} className="inline-flex">
+                <Button
+                  variant="ghost"
+                  className={cn("h-8 px-3 text-sm", active && "bg-muted text-foreground", "transition-colors")}
+                >
+                  {label}
+                </Button>
+              </Link>
+            )
+          })}
+        </nav>
+
+        <div className="ml-auto sm:ml-2">
+          <DarkModeToggle />
+        </div>
+      </div>
+    </header>
+  )
+}
+
+// app/(student)/student/page.tsx
+import StudentHeroFX from "./components/student-hero-fx"
+import StudentIdBanner from "./components/student-id-banner"
+import { getUser } from "@/lib/auth"
+
+export default async function StudentPage() {
+  const user = await getUser()
+  if (!user || user.role !== "student") {
+    return <div>Unauthorized</div>
+  }
+
+  return (
+    <div>
+      <StudentHeroFX />
+      <div className="mx-auto max-w-6xl p-4 -mt-16">
+        <StudentIdBanner id={user.id} />
+      </div>
+      {/* rest of code here */}
+    </div>
+  )
+}
+
+// server/teacher-actions.ts
+"use server"
+import { cookies } from "next/headers"
+import { getCurrentUser } from "@/lib/auth"
+import { revalidatePath } from "next/cache"
+import { sql } from "@/server/db"
+import { updateStudentMonths, updateStudentClassification } from "@/server/teacher-actions"
+
+export type StudentClassification = "center" | "online"
+
+export async function addExistingStudentToTeacher(
+  studentId: string,
+  classification: StudentClassification,
+  allowedMonths: number[] = []
+) {
+  try {
+    const sessionCookie = cookies().get("session_id")?.value
+    const me = await getCurrentUser(sessionCookie)
+    if (!me || me.role !== "teacher") {
+      return { ok: false as const, error: "Unauthorized" }
+    }
+
+    // Validate the student exists.
+    const rows = await sql`SELECT id FROM users WHERE id = ${studentId} LIMIT 1;`
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return { ok: false as const, error: "Student not found" }
+    }
+
+    // Update the student's classification globally (center | online).
+    const resClass = await updateStudentClassification(studentId, classification)
+    if (!resClass.ok) {
+      return resClass
+    }
+
+    // Link student to this teacher by setting allowed months for THIS teacher.
+    // This upserts the teacher->student access row if missing.
+    if (classification === "center") {
+      const ok = await updateStudentMonths(studentId, allowedMonths)
+      if (!ok) {
+        return { ok: false as const, error: "Failed to set access months" }
+      }
+    } else {
+      // For online, clear months (optional, comment out if you want to keep existing months).
+      const ok = await updateStudentMonths(studentId, [])
+      if (!ok) {
+        return { ok: false as const, error: "Failed to update student access" }
+      }
+    }
+
+    revalidatePath("/teacher")
+    revalidatePath("/teacher/students")
+    return { ok: true as const }
+  } catch (e: any) {
+    return { ok: false as const, error: e?.message ?? "Server error" }
+  }
+}
+
+// app/(teacher)/teacher/page.tsx
+import TeacherHeroFX from "./components/teacher-hero-fx"
+import StudentsAccess from "./components/students-access"
+import AddExistingStudentForm from "@/components/add-existing-student-form"
+
+export default function TeacherPage() {
+  return (
+    <div>
+      <TeacherHeroFX />
+      <section id="students-access" className="mb-6">
+        <StudentsAccess />
+      </section>
+      <section id="add-student" className="mb-6">
+        <AddExistingStudentForm />
+      </section>
+      {/* rest of code here */}
+    </div>
+  )
+}

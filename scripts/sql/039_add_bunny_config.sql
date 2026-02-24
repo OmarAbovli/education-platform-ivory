@@ -1,0 +1,3 @@
+ALTER TABLE users ADD COLUMN IF NOT EXISTS bunny_main_api_key TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS bunny_api_key TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS bunny_library_id TEXT;

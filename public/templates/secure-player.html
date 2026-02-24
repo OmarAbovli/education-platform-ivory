@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Secure Player Template</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+     Video.js CSS 
+    <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+    <style>
+      .wm {
+        position: absolute;
+        pointer-events: none;
+        background: rgba(0,0,0,0.08);
+        color: rgba(0,0,0,0.6);
+        font: 500 11px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        padding: 2px 6px;
+        border-radius: 6px;
+        backdrop-filter: blur(2px);
+      }
+      .wrap { position: relative; max-width: 960px; margin: 24px auto; }
+      .vjs-big-play-button { border-radius: 8px !important; }
+      video { border-radius: 8px; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap" oncontextmenu="return false">
+      <video
+        id="player"
+        class="video-js vjs-big-play-centered vjs-16-9"
+        controls
+        preload="metadata"
+        playsinline
+        controlsList="nodownload noplaybackrate"
+        disablePictureInPicture
+      ></video>
+      <div id="wm" class="wm" style="top:10%;left:10%">Student Name</div>
+    </div>
+
+     Video.js 
+    <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+    <script>
+      // Choose one source:
+      // 1) Google Drive MP4 (replace FILE_ID):
+      // const source = { src: "https://drive.google.com/uc?export=download&id=FILE_ID", type: "video/mp4" };
+
+      // 2) HLS manifest:
+      // const source = { src: "https://YOUR-STATIC-DOMAIN.com/path/index.m3u8", type: "application/x-mpegURL" };
+
+      // Replace this line:
+      const source = { src: "https://drive.google.com/uc?export=download&id=FILE_ID", type: "video/mp4" };
+
+      const player = videojs("player", {
+        controls: true,
+        preload: "metadata",
+        fluid: true,
+        aspectRatio: "16:9",
+        responsive: true,
+        html5: { vhs: { overrideNative: true, withCredentials: false } },
+        controlBar: { playbackRateMenuButton: false, pictureInPictureToggle: false },
+        sources: [source],
+      });
+
+      // Dynamic watermark movement every 30s
+      const wm = document.getElementById("wm");
+      function moveWM() {
+        const top = 10 + Math.floor(Math.random() * 70);
+        const left = 10 + Math.floor(Math.random() * 70);
+        wm.style.top = top + "%";
+        wm.style.left = left + "%";
+      }
+      moveWM();
+      setInterval(moveWM, 30000);
+
+      // Extra deterrents
+      document.addEventListener("contextmenu", e => e.preventDefault());
+      document.addEventListener("dragstart", e => e.preventDefault());
+    </script>
+  </body>
+</html>
