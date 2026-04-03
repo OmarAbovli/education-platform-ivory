@@ -149,19 +149,17 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
     }
 
     setIsGeneratingAi(true)
-    const providerLabel = aiProvider === "pollinations" ? "Fast & Free AI" : "Professional Fooocus AI"
-    toast({ title: "AI Generation", description: `Starting ${providerLabel}...` })
+    toast({ title: "✨ Generating thumbnail...", description: "Creating AI thumbnail, please wait..." })
 
     try {
-      // 1. Call Server Action
       const contextText = `${title}. ${description}`
-      const result = await generateProfessionalThumbnail(contextText, aiProvider)
+      const result = await generateProfessionalThumbnail(contextText, aiProvider, category)
 
-      if (!result.ok || !result.imageBase64) {
+      if (!result.ok) {
         if (result.error === "QUOTA_EXCEEDED") {
           toast({
             title: "Credits Exhausted",
-            description: "Your professional credits are out. Please switch the AI model to 'Fast & Free AI' on the left to continue.",
+            description: "Your getimg credits are out. Switch to 'Fast & Free AI' instead.",
             variant: "destructive"
           })
           setIsGeneratingAi(false)
@@ -170,12 +168,23 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
         throw new Error(result.error || "Generation failed")
       }
 
-      // 2. Convert base64 to File and upload to local storage
-      const blobRes = await fetch(`data:image/jpeg;base64,${result.imageBase64}`)
-      const blob = await blobRes.blob()
+      let blob: Blob
 
+      if (result.localThumbnailUrl) {
+        // Local Next.js generation — use the URL directly, no blob upload needed
+        setThumbnailUrl(result.localThumbnailUrl)
+        toast({ title: "Generated ✨", description: "AI Thumbnail is ready!" })
+        setIsGeneratingAi(false)
+        return
+      } else if (result.imageBase64) {
+        // getimg base64 response
+        const blobRes = await fetch(`data:image/jpeg;base64,${result.imageBase64}`)
+        blob = await blobRes.blob()
+      } else {
+        throw new Error("No image data returned")
+      }
 
-      // 3. Convert blob to File and upload to local storage
+      // Upload to Vercel Blob for permanent storage
       const file = new File([blob], `ai-thumbnail-${Date.now()}.jpg`, { type: "image/jpeg" })
       const formData = new FormData()
       formData.append("file", file)
@@ -185,17 +194,18 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
 
       if (uploadData.ok && uploadData.url) {
         setThumbnailUrl(uploadData.url)
-        toast({ title: "Generated", description: "Professional AI Thumbnail ready!" })
+        toast({ title: "Generated ✨", description: "AI Thumbnail is ready!" })
       } else {
         throw new Error(uploadData.error || "Upload failed")
       }
     } catch (error: any) {
       console.error("AI Gen Error:", error)
-      toast({ title: "Generation Failed", description: "Could not generate or save the AI image. Please try again.", variant: "destructive" })
+      toast({ title: "Generation Failed", description: error.message || "Could not generate AI image. Please try again.", variant: "destructive" })
     } finally {
       setIsGeneratingAi(false)
     }
   }
+
 
   return (
     <form

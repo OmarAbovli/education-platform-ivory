@@ -152,7 +152,7 @@ export async function consumeQrTokenCreateSessionWithRole(token: string) {
       INSERT INTO sessions (id, user_id, expires_at, created_at)
       VALUES (${sessionId}, ${qr.user_id}, NOW() + INTERVAL '30 days', NOW());
     `
-    return { id: sessionId, role: qr.role }
+    return { id: sessionId, role: qr.role, user_id: qr.user_id }
   } catch (e: any) {
     console.error("consumeQrTokenCreateSession error", { code: e?.code, message: e?.message })
     return null

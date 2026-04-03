@@ -3,101 +3,101 @@
 import { getCurrentUser } from "@/lib/auth"
 import { cookies } from "next/headers"
 
-const GETIMG_API_KEY = process.env.GETIMG_API_KEY || "key-4khJ1gczZEMRW8cPfaJSRGYXGnYt7j030odCJfhqSQ5E3mNcmFnvYsb3SkjCSF7QamrG4ydnkU7sw87T5HfUsVJM0UUQ1QB"
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyBwtWhxvgpDtPZkcmj6CZihGs500vLij_U"
+const GETIMG_API_KEY = process.env.GETIMG_API_KEY
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY
 
 export type AiModelType = "pollinations" | "getimg" | "gemini"
 
-export async function generateProfessionalThumbnail(videoContext: string, modelType: AiModelType = "pollinations") {
+async function requireTeacher() {
     const cookieStore = await cookies()
     const me = await getCurrentUser(cookieStore.get("session_id")?.value)
+    if (!me || me.role !== "teacher") throw new Error("Unauthorized")
+    return me
+}
 
-    if (!me || me.role !== "teacher") {
-        throw new Error("Unauthorized")
-    }
-
+/** Use Gemini text API to enhance description into a richer thumbnail context */
+async function enhanceDescription(topic: string): Promise<string> {
+    if (!GEMINI_API_KEY) return topic
     try {
-        // 1. Prompt Engineering with Gemini for high-quality results
-        let enhancedPrompt = videoContext
-
-        // Always use Gemini to enhance the prompt if we have a key
-        try {
-            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`
-            const geminiResponse = await fetch(geminiUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [{
-                            text: `
-                You are a senior art director. Create a HIGH-IDENTITY AI image prompt for an educational platform.
-                
-                TOPIC: "${videoContext}"
-                
-                MANDATORY RULES:
-                1. SUBJECT: Exactly ONE person. A charismatic, professional middle-eastern man (the teacher) in his 30s. Smart business attire (navy suit). High-end look.
-                2. NO CHILDREN: NEVER draw children, kids, or students. Even if the topic is for primary school, focus ONLY on the adult teacher.
-                3. BRANDING: The word "YourPlatform" MUST be written in huge, modern, bold 3D letters at the top. This is the platform identity.
-                4. SECONDARY TEXT: Include bold floating English keywords from the topic (e.g., "LEARN", "EXCEL", "SUCCESS").
-                5. ENVIRONMENT: A futuristic high-tech educational studio. Glowing blue and gold lighting. 
-                6. STYLE: Highly detailed 4k, cinematic, photorealistic, YouTube Thumbnail style.
-                
-                Respond with the final prompt only. 
-              `
-                        }]
-                    }]
-                })
-            })
-            const geminiData = await geminiResponse.json()
-            enhancedPrompt = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || videoContext
-        } catch (e) {
-            console.warn("Gemini prompt enhancement failed, using raw context", e)
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`
+        const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: `Summarize this educational video topic in one punchy line (max 8 words): "${topic}"` }] }],
+            }),
+            signal: AbortSignal.timeout(8000),
+        })
+        if (res.ok) {
+            const data = await res.json()
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+            if (text && text.length > 3) return text
         }
+    } catch { /* fallback to original */ }
+    return topic
+}
 
-        // 2. Generation Logic based on selected model
-        if (modelType === "getimg") {
-            const response = await fetch("https://api.getimg.ai/v1/essential/text-to-image", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                    "Authorization": `Bearer ${GETIMG_API_KEY}`,
-                },
-                body: JSON.stringify({
-                    prompt: enhancedPrompt,
-                    style: "photorealism",
-                    aspect_ratio: "16:9",
-                    output_format: "jpeg",
-                }),
-            })
-
-            if (!response.ok) {
-                const errData = await response.json()
-                if (errData.error?.code === "insufficient_quota") {
-                    throw new Error("QUOTA_EXCEEDED")
-                }
-                throw new Error(errData.error?.message || "Getimg API Failure")
-            }
-
-            const data = await response.json()
-            return { ok: true, imageBase64: data.image }
+/**
+ * Generate thumbnail using getimg.ai Essential API (paid, high quality).
+ */
+async function generateWithGetimg(prompt: string): Promise<{ ok: true; imageBase64: string } | { ok: false; error: string }> {
+    if (!GETIMG_API_KEY) {
+        return { ok: false, error: "GETIMG_API_KEY is not set in .env. Get a free key at getimg.ai" }
+    }
+    try {
+        const res = await fetch("https://api.getimg.ai/v1/essential/text-to-image", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${GETIMG_API_KEY}` },
+            body: JSON.stringify({ prompt, style: "photorealism", aspect_ratio: "16:9", output_format: "jpeg" }),
+            signal: AbortSignal.timeout(40000),
+        })
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({})) as any
+            if (err?.error?.code === "insufficient_quota") return { ok: false, error: "QUOTA_EXCEEDED" }
+            return { ok: false, error: err?.error?.message ?? `getimg error ${res.status}` }
         }
-
-        // Default to Pollinations (Free/Unlimited)
-        // FORCE 'flux' model for all free/gemini paths to get better text and quality
-        const pollModel = "&model=flux"
-        const seed = Math.floor(Math.random() * 1000000)
-        const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}?width=1280&height=720&nologo=true&seed=${seed}${pollModel}`
-
-        const imageResponse = await fetch(pollinationsUrl)
-        if (!imageResponse.ok) throw new Error("Pollinations Service failed")
-
-        const arrayBuffer = await imageResponse.arrayBuffer()
-        const base64 = Buffer.from(arrayBuffer).toString('base64')
-
-        return { ok: true, imageBase64: base64 }
-
-    } catch (error: any) {
-        console.error("AI Generation Error:", error)
-        return { ok: false, error: error.message }
+        const data = await res.json()
+        return { ok: true, imageBase64: data.image }
+    } catch (e: any) {
+        return { ok: false, error: e.message ?? "getimg request failed" }
     }
 }
+
+/**
+ * Main export: generate thumbnail.
+ *
+ * For pollinations/gemini: returns a localThumbnailUrl (built from /api/generate-thumbnail)
+ *   so the browser fetches it directly — no external APIs needed.
+ * For getimg: returns imageBase64 from getimg.ai.
+ */
+export async function generateProfessionalThumbnail(
+    videoContext: string,
+    modelType: AiModelType = "gemini",
+    category?: string
+) {
+    await requireTeacher()
+
+    if (modelType === "pollinations" || modelType === "gemini") {
+        // Optionally enhance the title with Gemini text
+        const enhancedTitle = await enhanceDescription(videoContext)
+        // Return a local URL — the browser will call /api/generate-thumbnail
+        const params = new URLSearchParams({
+            title: enhancedTitle,
+            description: videoContext.slice(0, 100),
+            category: category ?? "Education",
+        })
+        const localThumbnailUrl = `/api/generate-thumbnail?${params.toString()}`
+        return { ok: true as const, localThumbnailUrl, imageBase64: null, pollinationsUrl: null }
+    }
+
+    if (modelType === "getimg") {
+        const prompt = `Educational YouTube thumbnail, topic: "${videoContext}". Professional male teacher, futuristic studio, bold "YourPlatform" branding, 4K cinematic style.`
+        const result = await generateWithGetimg(prompt)
+        if (!result.ok) return { ok: false as const, error: result.error }
+        return { ok: true as const, imageBase64: result.imageBase64, localThumbnailUrl: null, pollinationsUrl: null }
+    }
+
+    return { ok: false as const, error: "Unknown model type" }
+}
+
+export type { AiModelType as AiProviderType }

@@ -17,6 +17,7 @@ import { GlobalSnow } from "@/components/global-snow"
 import { getSnowSetting } from "@/server/teacher-actions"
 
 import { LastPageTracker } from "@/components/last-page-tracker";
+import { ActivityTracker } from "@/hooks/use-activity-tracker";
 
 export const viewport = {
   themeColor: "#09090b",
@@ -116,6 +117,8 @@ html, body { background: transparent !important; }
             <BackgroundCompat />
             {/* App content above the background */}
             <div className="relative z-20">{children}</div>
+            {/* 💓 Global Activity Pulse (Teacher Analytics) */}
+            <ActivityTracker />
             {/* Conditionally render Floating Chat for students, now INSIDE the providers */}
             {user?.role === 'student' && <FloatingChat />}
           </ThemeProvider>

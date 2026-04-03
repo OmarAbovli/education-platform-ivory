@@ -2,6 +2,7 @@ import { cookies } from "next/headers"
 import SiteHeader from "@/components/site-header"
 
 export const dynamic = "force-dynamic"
+import { getTeacherAnalyticsOverview } from "@/server/teacher-analytics-queries"
 import { TeacherVideoForm } from "@/components/teacher-video-form"
 import { CreateStudentForm } from "@/components/create-student-form"
 import TeacherStudentsManager from "@/components/teacher-students-manager"
@@ -60,6 +61,7 @@ export default async function TeacherPage() {
     SELECT COUNT(DISTINCT student_id)::int AS count FROM teacher_subscriptions
     WHERE teacher_id = ${me.id} AND status = 'active';
   `) as any[]
+  
   const nextLive = (await sql`
     SELECT title, start_at
     FROM live_sessions
@@ -67,6 +69,8 @@ export default async function TeacherPage() {
     ORDER BY start_at ASC
     LIMIT 1;
   `) as any[]
+
+  const analytics = await getTeacherAnalyticsOverview()
 
   // Initial settings
   let initial = {
@@ -110,36 +114,72 @@ export default async function TeacherPage() {
         <h2 id="dashboard" className="text-xl font-semibold">
           Dashboard
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Your Students</CardTitle>
-            </CardHeader>
-            <CardContent className="text-3xl font-semibold">{studentsCount}</CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Your Videos</CardTitle>
-            </CardHeader>
-            <CardContent className="text-3xl font-semibold">{videosCount}</CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Next Live (Scheduled)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {nextLive[0] ? (
-                <div>
-                  <p className="font-medium">{nextLive[0].title}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {new Date(nextLive[0].start_at).toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' })}
-                  </p>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No upcoming sessions</p>
-              )}
-            </CardContent>
-          </Card>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Link href="/teacher/students" className="block group">
+            <Card className="hover:border-emerald-500/50 transition-colors cursor-pointer h-full">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Your Students</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-semibold">{studentsCount}</div>
+                <p className="text-xs text-muted-foreground mt-1 group-hover:text-emerald-600 transition-colors">
+                  View all students →
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
+          
+          <Link href="/teacher/analytics" className="block group">
+            <Card className="hover:border-emerald-500/50 transition-colors cursor-pointer h-full">
+              <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
+                <CardTitle className="text-sm font-medium">Online Now</CardTitle>
+                <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-semibold">{analytics.onlineNow}</div>
+                <p className="text-xs text-muted-foreground mt-1 group-hover:text-emerald-600 transition-colors">
+                  View live feed →
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
+
+          <Link href="/teacher/videos" className="block group">
+            <Card className="hover:border-emerald-500/50 transition-colors cursor-pointer h-full">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Your Videos</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-3xl font-semibold">{videosCount}</div>
+                <p className="text-xs text-muted-foreground mt-1 group-hover:text-emerald-600 transition-colors">
+                  Manage content →
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
+          
+          <Link href="#live" className="block group">
+            <Card className="hover:border-emerald-500/50 transition-colors cursor-pointer h-full">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">Next Live</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {nextLive[0] ? (
+                  <div>
+                    <p className="text-sm font-medium truncate">{nextLive[0].title}</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {new Date(nextLive[0].start_at).toLocaleString('ar-EG')}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No upcoming</p>
+                )}
+                <p className="text-xs text-muted-foreground mt-2 group-hover:text-emerald-600 transition-colors">
+                  Go to session →
+                </p>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
       </section>
 

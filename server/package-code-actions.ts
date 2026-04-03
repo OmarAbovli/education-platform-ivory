@@ -1,6 +1,6 @@
 "use server"
 
-import { sql } from "@/server/db"
+import { sql, pool } from "@/server/db"
 import { randomBytes } from "crypto"
 import { getCurrentUser } from "@/lib/auth"
 import { cookies } from "next/headers"
@@ -394,28 +394,38 @@ export async function redeemPackageCode(code: string): Promise<{
             return { success: false, error: "ALREADY_HAVE_PACKAGE" }
         }
 
-        // All checks passed - redeem the code
-        console.log("✅ All checks passed! Redeeming code...")
+        // All checks passed - redeem the code securely using a real transaction
+        console.log("✅ All checks passed! Redeeming code via ACID transaction...")
 
-        // Mark code as used
-        await sql`
-          UPDATE package_codes
-          SET is_used = TRUE,
-            used_by_student_id = ${studentId},
-        used_at = NOW()
-          WHERE id = ${codeData.id}
-        `
+        if (!pool) throw new Error("Database pool not available for transaction")
+        const client = await pool.connect()
 
-        console.log("✅ Code marked as used")
+        try {
+          await client.query("BEGIN")
 
-        // Add package access to student
-        await sql`
-          INSERT INTO student_package_access(student_id, package_id, teacher_id)
-        VALUES(${studentId}, ${codeData.packageId}, ${codeData.teacherId})
-          ON CONFLICT(student_id, teacher_id, package_id) DO NOTHING
-            `
+          // 1. Mark code as used
+          await client.query(
+            "UPDATE package_codes SET is_used = TRUE, used_by_student_id = $1, used_at = NOW() WHERE id = $2",
+            [studentId, codeData.id]
+          )
 
-        console.log("✅ Package access granted!")
+          // 2. Grant access to package
+          await client.query(
+            "INSERT INTO student_package_access(student_id, package_id, teacher_id) VALUES($1, $2, $3) ON CONFLICT DO NOTHING",
+            [studentId, codeData.packageId, codeData.teacherId]
+          )
+
+          await client.query("COMMIT")
+          console.log("🎉 Transaction committed successfully!")
+        } catch (txError) {
+          await client.query("ROLLBACK")
+          console.error("❌ Transaction failed, rolled back:", txError)
+          throw txError
+        } finally {
+          client.release()
+        }
+
+        console.log("✅ Code marked as used and package access granted!")
 
         return {
             success: true,

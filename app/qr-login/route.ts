@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { consumeQrTokenCreateSessionWithRole } from "@/server/qr-actions"
+import { signJWT } from "@/lib/jwt"
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token")
@@ -22,5 +23,16 @@ export async function GET(req: NextRequest) {
     maxAge: 31536000, // 365 days
     secure: process.env.NODE_ENV === "production"
   })
+
+  // Set JWT
+  const authToken = await signJWT({ id: session.user_id, role: session.role as any })
+  response.cookies.set("auth_token", authToken, {
+    httpOnly: true,
+    path: "/",
+    sameSite: "lax",
+    maxAge: 31536000,
+    secure: process.env.NODE_ENV === "production"
+  })
+
   return response
 }

@@ -133,6 +133,28 @@ export async function setLiveStatus(input: {
         }
       }
     } else if (!input.active) {
+      // Find active sessions and close them natively on providers
+      const activeCalls = await sql`
+        SELECT room_name, provider 
+        FROM voice_calls 
+        WHERE started_by = ${teacherId} AND status = 'active'
+      ` as any[];
+
+      for (const call of activeCalls) {
+        if (call.provider === 'livekit') {
+          try {
+            const { RoomServiceClient } = await import("livekit-server-sdk")
+            const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL!
+            const apiKey = process.env.LIVEKIT_API_KEY!
+            const apiSecret = process.env.LIVEKIT_API_SECRET!
+            const svc = new RoomServiceClient(wsUrl, apiKey, apiSecret)
+            await svc.deleteRoom(call.room_name)
+          } catch (e) {
+            console.error("Failed to cleanly delete zombie LiveKit room:", e)
+          }
+        }
+      }
+
       // If stopping live, mark any active sessions for this teacher as ended
       await sql`
         UPDATE voice_calls

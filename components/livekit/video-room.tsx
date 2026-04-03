@@ -20,6 +20,7 @@ import { useEffect, useState, useRef, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
 import { muteParticipant, removeParticipant, endRoom, getCallReport, saveCallStats, muteAllParticipants } from "@/server/livekit-actions"
+import fixWebmDuration from "fix-webm-duration"
 
 export function VideoRoom({ userId, userName }: { userId?: string, userName?: string }) {
     const router = useRouter()
@@ -164,6 +165,11 @@ function VideoConferenceWithTools({ role, roomName, userId }: { role: string | n
     const encoder = new TextEncoder()
     const decoder = new TextDecoder()
 
+    // -- Pop-up Quiz Logic --
+    const [activeQuiz, setActiveQuiz] = useState<{ id: string, question: string, options: string[] } | null>(null)
+    const [quizResults, setQuizResults] = useState<Record<number, number>>({})
+    const [hasVoted, setHasVoted] = useState(false)
+
     // -- Stats Tracking Logic --
     const statsRef = useRef({ speakingSeconds: 0, micOpenSeconds: 0, handRaiseCount: 0 })
     const lastHandState = useRef(false)
@@ -190,7 +196,7 @@ function VideoConferenceWithTools({ role, roomName, userId }: { role: string | n
             if (statsRef.current.speakingSeconds > 0 || statsRef.current.micOpenSeconds > 0 || statsRef.current.handRaiseCount > 0) {
                 const toSend = { ...statsRef.current }
                 statsRef.current = { speakingSeconds: 0, micOpenSeconds: 0, handRaiseCount: 0 }
-                await saveCallStats(roomName, room.localParticipant.identity, toSend)
+                await saveCallStats(roomName, toSend)
             }
         }, 30000)
 
@@ -212,6 +218,22 @@ function VideoConferenceWithTools({ role, roomName, userId }: { role: string | n
                         else next.delete(participant.identity)
                         return next
                     })
+                }
+                
+                // Pop-up Quiz Events
+                if (data.type === 'POLL') {
+                    setActiveQuiz(data)
+                    setHasVoted(false)
+                    setQuizResults({})
+                }
+                if (data.type === 'POLL_ANSWER') {
+                    setQuizResults(prev => ({
+                        ...prev,
+                        [data.optionIndex]: (prev[data.optionIndex] || 0) + 1
+                    }))
+                }
+                if (data.type === 'END_POLL') {
+                    setActiveQuiz(null)
                 }
             } catch (e) {
                 console.error("Failed to parse data message", e)
@@ -319,12 +341,18 @@ function VideoConferenceWithTools({ role, roomName, userId }: { role: string | n
 
             recorder.onstop = () => {
                 const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `recording-${roomName}-${new Date().toISOString()}.webm`;
-                a.click();
-                URL.revokeObjectURL(url);
+                // We use recordingDuration (seconds) to inject metadata
+                const durationMs = recordingDuration * 1000;
+                
+                fixWebmDuration(blob, durationMs, (fixedBlob) => {
+                    const url = URL.createObjectURL(fixedBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `recording-${roomName}-${new Date().toISOString()}.webm`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                });
+
                 chunksRef.current = [];
                 setIsRecording(false);
                 if (timerRef.current) clearInterval(timerRef.current);
@@ -354,6 +382,32 @@ function VideoConferenceWithTools({ role, roomName, userId }: { role: string | n
         }
     }
 
+    // -- CSV Export --
+    function downloadCSV() {
+        if (!reportData) return;
+        const headers = ["Name", "Status", "Joined At", "Speaking Time (s)"];
+        const rows = [];
+        for (const p of reportData.participants) {
+            rows.push([
+                `"${(p.name || '').replace(/"/g, '""')}"`,
+                "Present",
+                `"${new Date(p.joined_at).toLocaleString()}"`,
+                p.speaking_duration_seconds || 0
+            ].join(","));
+        }
+        for (const s of reportData.absentStudents) {
+            rows.push([`"${(s.name || '').replace(/"/g, '""')}"`, "Absent", "-", "0"].join(","));
+        }
+        const csvContent = "data:text/csv;charset=utf-8,\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", `attendance_report_${roomName}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
     // -- Render Report --
     if (reportData) {
         return (
@@ -361,7 +415,10 @@ function VideoConferenceWithTools({ role, roomName, userId }: { role: string | n
                 <div className="max-w-4xl mx-auto w-full space-y-6">
                     <div className="flex justify-between items-center">
                         <h1 className="text-3xl font-bold text-emerald-500">📊 Session Report</h1>
-                        <button onClick={() => window.close()} className="text-slate-400 hover:text-white bg-slate-800 px-4 py-2 rounded">✕ Close</button>
+                        <div className="flex items-center gap-3">
+                            <button onClick={downloadCSV} className="text-white hover:bg-emerald-600 bg-emerald-700 px-4 py-2 rounded font-medium flex items-center gap-2">📥 Download CSV</button>
+                            <button onClick={() => window.close()} className="text-slate-400 hover:text-white bg-slate-800 px-4 py-2 rounded">✕ Close</button>
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
@@ -437,6 +494,49 @@ function VideoConferenceWithTools({ role, roomName, userId }: { role: string | n
                     )}
                 </div>
 
+                {/* Quiz Overlay */}
+                {activeQuiz && (
+                    <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 glass-panel p-6 rounded-2xl w-96 max-w-[90vw] shadow-2xl border border-white/10 animate-in fade-in slide-in-from-top-4 backdrop-blur-2xl bg-slate-900/80">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="font-bold text-lg text-emerald-400">{role === 'host' ? 'Live Poll (Admin)' : 'Pop-up Quiz!'}</h3>
+                            {role === 'host' && (
+                                <button onClick={() => setActiveQuiz(null)} className="text-slate-400 hover:text-white text-xs bg-white/5 px-2 py-1 rounded">Hide</button>
+                            )}
+                        </div>
+                        <h4 className="font-medium text-white mb-4 leading-relaxed">{activeQuiz.question}</h4>
+                        {role === 'host' ? (
+                            <div className="space-y-2">
+                                {activeQuiz.options.map((opt, i) => (
+                                    <div key={i} className="flex items-center justify-between bg-white/5 p-3 rounded-lg border border-white/5 overflow-hidden relative">
+                                        <div className="absolute bg-indigo-600/20 left-0 top-0 bottom-0 z-0 transition-all" style={{ width: `${quizResults[i] ? (quizResults[i] / Math.max(1, Object.values(quizResults).reduce((a:any,b:any) => a+b, 0) as number)) * 100 : 0}%` }}></div>
+                                        <span className="relative z-10 text-sm font-medium">{opt}</span>
+                                        <span className="relative z-10 font-mono font-bold text-emerald-400 bg-emerald-400/10 px-2 py-1 rounded">{quizResults[i] || 0}</span>
+                                    </div>
+                                ))}
+                                <div className="text-xs text-center text-slate-400 mt-4">Live Results syncing...</div>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {activeQuiz.options.map((opt, i) => (
+                                    <button
+                                        key={i}
+                                        disabled={hasVoted}
+                                        onClick={() => {
+                                            setHasVoted(true)
+                                            const msg = { type: 'POLL_ANSWER', optionIndex: i, pollId: activeQuiz.id }
+                                            room.localParticipant.publishData(encoder.encode(JSON.stringify(msg)), { reliable: true })
+                                        }}
+                                        className={`w-full p-3 rounded-xl text-left transition-all font-medium text-sm border shadow-sm ${hasVoted ? 'bg-white/5 opacity-50 border-white/5 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500 border-indigo-500 hover:scale-102'}`}
+                                    >
+                                        {opt}
+                                    </button>
+                                ))}
+                                {hasVoted && <div className="text-xs text-center text-slate-400 mt-4">Answer submitted. Waiting for results...</div>}
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {/* 2. Floating Right Sidebar - Glass Morphism */}
                 {isSidebarOpen && (
                     <div className="absolute top-4 right-4 bottom-20 w-80 glass-panel rounded-2xl shadow-2xl z-50 overflow-hidden flex flex-col animate-in slide-in-from-right duration-300">
@@ -501,6 +601,40 @@ function VideoConferenceWithTools({ role, roomName, userId }: { role: string | n
                                     </div>
                                     <hr className="border-neutral-700" />
                                     <div className="space-y-2">
+                                        <h3 className="text-xs font-bold text-zinc-500 uppercase">Engagement (Polls)</h3>
+                                        <button
+                                            onClick={() => {
+                                                const q = prompt("Enter Poll Question:")
+                                                if(!q) return;
+                                                const optsRaw = prompt("Enter Comma-separated options (e.g. Yes,No,Maybe)")
+                                                if(!optsRaw) return;
+                                                const opts = optsRaw.split(',').map(s => s.trim())
+                                                
+                                                const msg = { type: 'POLL', id: Date.now().toString(), question: q, options: opts }
+                                                room.localParticipant.publishData(encoder.encode(JSON.stringify(msg)), { reliable: true })
+                                                setActiveQuiz(msg)
+                                                setHasVoted(false)
+                                                setQuizResults({})
+                                            }}
+                                            className="w-full bg-blue-600 hover:bg-blue-500 text-white py-3 rounded-lg flex items-center justify-center gap-2 transition-all font-medium border border-blue-500"
+                                        >
+                                            📊 Quick Poll
+                                        </button>
+                                        {activeQuiz && (
+                                            <button
+                                                onClick={() => {
+                                                    const msg = { type: 'END_POLL' }
+                                                    room.localParticipant.publishData(encoder.encode(JSON.stringify(msg)), { reliable: true })
+                                                    setActiveQuiz(null)
+                                                }}
+                                                className="w-full bg-zinc-800 hover:bg-red-500/20 text-white border border-zinc-700 py-2 rounded-lg flex items-center justify-center gap-2 transition-all font-medium text-xs"
+                                            >
+                                                Close Poll For Students
+                                            </button>
+                                        )}
+                                    </div>
+                                    <hr className="border-neutral-700" />
+                                    <div className="space-y-2">
                                         <h3 className="text-xs font-bold text-zinc-500 uppercase">Recording</h3>
                                         {!isRecording ? (
                                             <button
@@ -519,6 +653,9 @@ function VideoConferenceWithTools({ role, roomName, userId }: { role: string | n
                                         )}
                                         <p className="text-[10px] text-zinc-500 text-center">
                                             Recording saves to your device automatically.
+                                        </p>
+                                        <p className="text-[10px] text-yellow-500/80 text-center font-medium px-2">
+                                            ⚠️ تحذير الذاكرة: التسجيل يتم على متصفحك. لا تسجل حصة تتجاوز 90 دقيقة متصلة حتى لا يعالجك المتصفح.
                                         </p>
                                     </div>
                                     <hr className="border-neutral-700" />
@@ -550,6 +687,30 @@ function VideoConferenceWithTools({ role, roomName, userId }: { role: string | n
                     className={`px-3 py-2 rounded text-sm font-medium transition-all flex items-center gap-2 ${raisedHands.has(room.localParticipant.identity) ? 'bg-yellow-500 text-black' : 'bg-neutral-800 text-zinc-400 hover:bg-neutral-700'}`}
                 >
                     {raisedHands.has(room.localParticipant.identity) ? '✋ Lower Hand' : '✋ Raise Hand'}
+                </button>
+
+                <button
+                    onClick={async () => {
+                        try {
+                            const video = document.querySelector('video');
+                            if (!video) { toast({title: "No video found"}); return; }
+                            
+                            // Check if picture-in-picture is supported
+                            if (!document.pictureInPictureEnabled) {
+                                toast({title: "PiP Not Supported", description: "Your browser does not support Picture-in-Picture."});
+                                return;
+                            }
+                            
+                            if (document.pictureInPictureElement) {
+                                await document.exitPictureInPicture();
+                            } else {
+                                await video.requestPictureInPicture();
+                            }
+                        } catch(e) { console.error("PiP error", e) }
+                    }}
+                    className={`ml-2 px-3 py-2 rounded text-sm font-medium transition-all bg-neutral-800 text-cyan-400 hover:bg-neutral-700`}
+                >
+                    🔲 PiP
                 </button>
 
                 <button

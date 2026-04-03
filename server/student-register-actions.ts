@@ -4,6 +4,7 @@ import { sql } from "@/server/db"
 import { randomUUID } from "crypto"
 import bcrypt from "bcryptjs"
 import { cookies } from "next/headers"
+import { signJWT } from "@/lib/jwt"
 import type { StudentClassification } from "./teacher-actions"
 
 type SelfRegisterInput = {
@@ -95,6 +96,15 @@ export async function selfRegisterStudent(input: SelfRegisterInput) {
     `
 
         cookieStore.set("session_id", sessionId, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 60 * 60 * 24 * 30, // 30 days
+            path: "/"
+        })
+
+        const authToken = await signJWT({ id: studentId, role: "student" })
+        cookieStore.set("auth_token", authToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === "production",
             sameSite: "lax",

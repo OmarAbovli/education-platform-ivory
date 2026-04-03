@@ -1,8 +1,9 @@
 import { sql } from "@/server/db"
+import { cache } from "react"
 
 export type Role = "admin" | "teacher" | "student"
 
-export async function getCurrentUser(sessionId?: string) {
+export const getCurrentUser = cache(async (sessionId?: string) => {
   try {
     if (!sessionId) {
       return null
@@ -18,4 +19,4 @@ export async function getCurrentUser(sessionId?: string) {
   } catch {
     return null
   }
-}
+})

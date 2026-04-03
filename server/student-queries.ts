@@ -432,3 +432,34 @@ export async function getStudentQuizzes(userId: string) {
 
   return quizzes
 }
+
+/**
+ * 🎞️ Get recently watched videos for the student dashboard.
+ * Includes progressive videos that haven't been completed yet or recently watched ones.
+ */
+export async function getRecentlyWatchedVideos(userId: string) {
+  try {
+    const rows = await sql`
+      SELECT 
+        v.id,
+        v.title,
+        v.thumbnail_url as thumbnailUrl,
+        v.teacher_id as teacherId,
+        u.name as teacherName,
+        vwt.last_watch_progress as progress,
+        vwt.last_watched_at as lastWatchedAt
+      FROM video_watch_tracking vwt
+      JOIN videos v ON v.id = vwt.video_id
+      JOIN users u ON u.id = v.teacher_id
+      WHERE vwt.student_id = ${userId}
+        AND vwt.last_watch_progress > 0
+      ORDER BY vwt.last_watched_at DESC
+      LIMIT 10
+    ` as any[]
+
+    return rows
+  } catch (error) {
+    console.error("Error fetching recently watched videos:", error)
+    return []
+  }
+}

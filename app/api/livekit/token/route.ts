@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createLiveKitToken } from "@/server/livekit-actions"
-import { getCurrentUser } from "@/lib/auth"
+import { verifyJWT } from "@/lib/jwt"
 import { cookies } from "next/headers"
 
 export async function GET(req: NextRequest) {
@@ -14,8 +14,12 @@ export async function GET(req: NextRequest) {
 
     try {
         const cookieStore = await cookies()
-        const sessionId = cookieStore.get("session_id")?.value
-        const user = await getCurrentUser(sessionId)
+        const authToken = cookieStore.get("auth_token")?.value
+
+        let user = null;
+        if (authToken) {
+            user = await verifyJWT(authToken)
+        }
 
         if (!user) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -25,7 +29,7 @@ export async function GET(req: NextRequest) {
         const name = user.name || participantNameParam || "Guest"
         const identity = user.id
 
-        const { token } = await createLiveKitToken(room, identity, role, name)
+        const { token } = await createLiveKitToken(room, identity, role, name as string)
 
         // Record join in database for attendance
         try {
@@ -34,6 +38,14 @@ export async function GET(req: NextRequest) {
                 INSERT INTO voice_call_participants (call_id, user_id)
                 SELECT id, ${user.id} FROM voice_calls WHERE room_name = ${room} AND status = 'active'
                 ON CONFLICT (call_id, user_id) DO NOTHING;
+            `
+            // Update left_at to NULL in case they dropped out and reconnected
+            await sql`
+                UPDATE voice_call_participants
+                SET left_at = NULL, joined_at = NOW()
+                WHERE user_id = ${user.id} AND call_id IN (
+                    SELECT id FROM voice_calls WHERE room_name = ${room} AND status = 'active'
+                )
             `
         } catch (dbErr) {
             console.error("Failed to record participant join", dbErr)

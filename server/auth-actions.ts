@@ -5,6 +5,7 @@ import { randomUUID, randomBytes } from "crypto"
 import bcrypt from "bcryptjs"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
+import { signJWT } from "@/lib/jwt"
 
 type CreateTeacherInput = {
   name: string
@@ -155,6 +156,58 @@ export async function adminDeleteTeacher(teacherId: string) {
 }
 
 /**
+ * Security: Track and block repeated failed login attempts.
+ */
+async function recordLoginAttempt(identifier: string, success: boolean) {
+  try {
+    // Self-healing: Create table if not exists (only runs once per deploy/cold start ideally)
+    await sql`
+      CREATE TABLE IF NOT EXISTS login_attempts (
+        id SERIAL PRIMARY KEY,
+        identifier TEXT NOT NULL,
+        attempted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        success BOOLEAN NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_login_attempts_id_time ON login_attempts(identifier, attempted_at) WHERE NOT success;
+    `
+    // Self-healing: Upgrade sessions table too
+    await sql`
+      DO $$ 
+      BEGIN 
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sessions' AND column_name='last_active_at') THEN
+          ALTER TABLE sessions ADD COLUMN last_active_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sessions' AND column_name='current_activity') THEN
+          ALTER TABLE sessions ADD COLUMN current_activity TEXT;
+        END IF;
+      END $$;
+    `
+    // Cleanup old attempts (fire and forget)
+    sql`DELETE FROM login_attempts WHERE attempted_at < NOW() - INTERVAL '1 day';`.catch(() => {})
+  } catch (e) {
+    console.error("Rate limit record error:", e)
+  }
+}
+
+async function isThrottled(identifier: string): Promise<boolean> {
+  try {
+    const rows = await sql`
+      SELECT COUNT(*) as count
+      FROM login_attempts
+      WHERE identifier = ${identifier}
+        AND success = FALSE
+        AND attempted_at > NOW() - INTERVAL '15 minutes';
+    `
+    return (parseInt((rows[0] as any).count) || 0) > 10
+  } catch {
+    return false
+  }
+}
+
+import { loginSchema } from "@/lib/schemas"
+import { z } from "zod"
+
+/**
  * Improved login UX: returns structured errors for invalid credentials,
  * and redirects on success. Used with useActionState in the client.
  */
@@ -162,15 +215,25 @@ export async function passwordLogin(
   _prevState: PasswordLoginState | undefined,
   formData: FormData,
 ): Promise<PasswordLoginState | void> {
-  const identifier = String(formData.get("identifier") ?? "").trim()
-  const password = String(formData.get("password") ?? "")
+  const rawData = Object.fromEntries(formData.entries())
+  const validation = loginSchema.safeParse(rawData)
 
-  // Basic validation
-  const fieldErrors: Record<string, string> = {}
-  if (!identifier) fieldErrors.identifier = "Please enter your username, email, or phone."
-  if (!password) fieldErrors.password = "Please enter your password."
-  if (Object.keys(fieldErrors).length > 0) {
-    return { ok: false, message: "Please correct the errors below.", fieldErrors }
+  if (!validation.success) {
+    const fieldErrors: Record<string, string> = {}
+    validation.error.errors.forEach((err: z.ZodError["errors"][0]) => {
+      if (err.path[0]) fieldErrors[err.path[0] as string] = err.message
+    })
+    return { ok: false, message: "Validation failed.", fieldErrors }
+  }
+
+  const { identifier, password } = validation.data
+
+  // Check Rate Limit
+  if (await isThrottled(identifier)) {
+    return { 
+      ok: false, 
+      message: "Too many failed attempts. Please wait 15 minutes or contact support." 
+    }
   }
 
   // Fetch user by identifier
@@ -191,8 +254,7 @@ export async function passwordLogin(
   }
 
   if (!user) {
-    // Small delay to reduce brute-force speed without impacting UX
-    await new Promise((r) => setTimeout(r, 300))
+    await recordLoginAttempt(identifier, false)
     return invalidResponse
   }
 
@@ -205,15 +267,18 @@ export async function passwordLogin(
   }
 
   if (!match) {
-    await new Promise((r) => setTimeout(r, 300))
+    await recordLoginAttempt(identifier, false)
     return invalidResponse
   }
+
+  // Success: Record it
+  await recordLoginAttempt(identifier, true)
 
   // Success: create session and redirect based on role
   const sessionId = "sess_" + randomUUID()
   await sql`
-    INSERT INTO sessions (id, user_id, expires_at, created_at)
-    VALUES (${sessionId}, ${user.id}, NOW() + INTERVAL '365 days', NOW());
+    INSERT INTO sessions (id, user_id, expires_at, created_at, last_active_at, current_activity)
+    VALUES (${sessionId}, ${user.id}, NOW() + INTERVAL '365 days', NOW(), NOW(), 'Logged In');
   `
     ; (await cookies()).set("session_id", sessionId, {
       httpOnly: true,
@@ -222,6 +287,21 @@ export async function passwordLogin(
       maxAge: 31536000, // 365 days in seconds
       secure: process.env.NODE_ENV === "production",
     })
+
+  const authToken = await signJWT({ id: user.id, role: user.role })
+    ; (await cookies()).set("auth_token", authToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      path: "/",
+      maxAge: 31536000,
+      secure: process.env.NODE_ENV === "production",
+    })
+
+  // Cleanup dead sessions in the background to prevent DB bloat over time
+  // Fire and forget, no await
+  sql`DELETE FROM sessions WHERE expires_at < NOW();`.catch((e) => {
+    console.error("Session cleanup error:", e)
+  })
 
   // Redirect to appropriate dashboard
   redirect(user.role === "admin" ? "/admin" : user.role === "teacher" ? "/teacher" : "/student")
@@ -235,6 +315,7 @@ export async function logout() {
       await sql`DELETE FROM sessions WHERE id = ${sid};`
     }
     c.delete("session_id")
+    c.delete("auth_token")
     return { ok: true as const }
   } catch (e: any) {
     console.error("logout error", e)

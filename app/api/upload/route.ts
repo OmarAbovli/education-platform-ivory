@@ -28,10 +28,10 @@ export async function POST(req: NextRequest) {
     const safeExt = ext.toLowerCase().replace(/[^a-z0-9]/g, "")
     const filename = `avatars/${randomUUID()}.${safeExt}`
 
-    // Upload to Vercel Blob as public file
+    // Upload to Vercel Blob
     // Pass token explicitly so it works locally as well as in production
     const uploaded = await put(filename, file, {
-      access: "public",
+      access: "private",
       addRandomSuffix: false,
       token,
     })

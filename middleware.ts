@@ -1,17 +1,16 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { getCurrentUser } from './lib/auth';
+import { verifyJWT } from './lib/jwt';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  const sessionCookie = request.cookies.get('session_id')?.value;
-
-  // Debug log (shown in terminal)
-  // console.log(`Middleware: ${pathname} | Session: ${sessionCookie ? 'Yes' : 'No'}`);
+  const token = request.cookies.get('auth_token')?.value;
 
   let user = null;
   try {
-    user = await getCurrentUser(sessionCookie);
+    if (token) {
+      user = await verifyJWT(token);
+    }
   } catch (err) {
     console.error("Middleware Auth Error:", err);
   }

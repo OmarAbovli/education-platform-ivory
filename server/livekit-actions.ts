@@ -4,6 +4,26 @@ import { AccessToken } from "livekit-server-sdk"
 import { z } from "zod"
 import { sql } from "@/server/db"
 import { awardXP } from "./xp-actions"
+import { cookies } from "next/headers"
+import { verifyJWT } from "@/lib/jwt"
+
+async function requireTeacherId() {
+    const cookieStore = await cookies()
+    const token = cookieStore.get("auth_token")?.value
+    if (!token) throw new Error("Unauthorized")
+    const user = await verifyJWT(token)
+    if (!user || user.role !== "teacher") throw new Error("Not authorized: teacher access required")
+    return user.id
+}
+
+async function requireUserAuth() {
+    const cookieStore = await cookies()
+    const token = cookieStore.get("auth_token")?.value
+    if (!token) throw new Error("Unauthorized")
+    const user = await verifyJWT(token)
+    if (!user) throw new Error("Unauthorized")
+    return user
+}
 
 export async function createLiveKitToken(roomName: string, identity: string, role: "host" | "guest", name?: string) {
     const apiKey = process.env.LIVEKIT_API_KEY
@@ -45,6 +65,7 @@ export async function muteParticipant(roomName: string, identity: string, trackS
     const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL
 
     if (!apiKey || !apiSecret || !wsUrl) throw new Error("Missing keys")
+    await requireTeacherId()
 
     // Use RoomServiceClient to manage room
     const { RoomServiceClient } = await import("livekit-server-sdk")
@@ -61,6 +82,7 @@ export async function removeParticipant(roomName: string, identity: string) {
     const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL
 
     if (!apiKey || !apiSecret || !wsUrl) throw new Error("Missing keys")
+    await requireTeacherId()
 
     const { RoomServiceClient } = await import("livekit-server-sdk")
     const svc = new RoomServiceClient(wsUrl, apiKey, apiSecret)
@@ -76,6 +98,7 @@ export async function muteAllParticipants(roomName: string, excludeIdentity?: st
     const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL
 
     if (!apiKey || !apiSecret || !wsUrl) throw new Error("Missing keys")
+    await requireTeacherId()
 
     const { RoomServiceClient, TrackSource } = await import("livekit-server-sdk")
     const svc = new RoomServiceClient(wsUrl, apiKey, apiSecret)
@@ -105,6 +128,7 @@ export async function endRoom(roomName: string) {
     const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL
 
     if (!apiKey || !apiSecret || !wsUrl) throw new Error("Missing keys")
+    await requireTeacherId()
 
     const { RoomServiceClient } = await import("livekit-server-sdk")
     const svc = new RoomServiceClient(wsUrl, apiKey, apiSecret)
@@ -133,16 +157,23 @@ export async function endRoom(roomName: string) {
 
 // --- Analytics & Reporting ---
 
-export async function saveCallStats(roomName: string, userId: string, stats: { speakingSeconds: number, micOpenSeconds: number, handRaiseCount?: number }) {
-    // In a real app, look up the call_id by room_name first
-    // This assumes we can link room_name to the voice_calls table
+export async function saveCallStats(roomName: string, stats: { speakingSeconds: number, micOpenSeconds: number, handRaiseCount?: number }) {
     try {
+        const user = await requireUserAuth()
+        const userId = user.id
+
+        // Hard CAP: Prevent Anti-Cheat XP farming
+        // The client syncs every 30 seconds. So max speaking/micOpen shouldn't exceed 35-40s realistically.
+        const cappedSpeaking = Math.min(stats.speakingSeconds, 40)
+        const cappedMicOpen = Math.min(stats.micOpenSeconds, 40)
+        const cappedHandRaise = Math.min(stats.handRaiseCount || 0, 5)
+
         await sql`
             UPDATE voice_call_participants
             SET 
-                speaking_duration_seconds = speaking_duration_seconds + ${stats.speakingSeconds},
-                mic_open_duration_seconds = mic_open_duration_seconds + ${stats.micOpenSeconds},
-                hand_raise_count = hand_raise_count + ${stats.handRaiseCount || 0}
+                speaking_duration_seconds = speaking_duration_seconds + ${cappedSpeaking},
+                mic_open_duration_seconds = mic_open_duration_seconds + ${cappedMicOpen},
+                hand_raise_count = hand_raise_count + ${cappedHandRaise}
             WHERE 
                 user_id = ${userId} 
                 AND call_id IN (SELECT id FROM voice_calls WHERE room_name = ${roomName} LIMIT 1)
@@ -150,9 +181,9 @@ export async function saveCallStats(roomName: string, userId: string, stats: { s
 
         // 🏆 Award XP for Live Participation
         // 5 XP per minute of speaking, 1 XP per minute of active presence (mic open)
-        const speakingXP = Math.floor((stats.speakingSeconds / 60) * 5)
-        const presenceXP = Math.floor((stats.micOpenSeconds / 60) * 1)
-        const bonusXP = (stats.handRaiseCount || 0) * 2 // 2 XP per hand raise
+        const speakingXP = Math.floor((cappedSpeaking / 60) * 5)
+        const presenceXP = Math.floor((cappedMicOpen / 60) * 1)
+        const bonusXP = cappedHandRaise * 2 // 2 XP per hand raise
 
         const totalLiveXP = speakingXP + presenceXP + bonusXP
 
@@ -174,6 +205,8 @@ export async function saveCallStats(roomName: string, userId: string, stats: { s
 
 export async function getCallReport(roomName: string) {
     try {
+        await requireTeacherId()
+
         // 1. Get Call Details & Participants
         const call = (await sql`
             SELECT id, grade, started_at, ended_at 
@@ -232,14 +265,7 @@ export async function getTeacherCallHistory() {
 
     // Use RoomServiceClient to get active rooms if needed, but for history we rely on DB
     try {
-        const { getCurrentUser } = await import("@/lib/auth")
-        const { cookies } = await import("next/headers")
-
-        const cookieStore = await cookies()
-        const sessionId = cookieStore.get("session_id")?.value
-        const user = await getCurrentUser(sessionId)
-
-        if (!user || user.role !== 'teacher') return { success: false, error: "Unauthorized" }
+        const teacherId = await requireTeacherId()
 
         const calls = await sql`
             SELECT 
@@ -251,7 +277,7 @@ export async function getTeacherCallHistory() {
                 COUNT(vcp.id) as participant_count
             FROM voice_calls vc
             LEFT JOIN voice_call_participants vcp ON vcp.call_id = vc.id
-            WHERE vc.started_by = ${user.id} 
+            WHERE vc.started_by = ${teacherId} 
               AND vc.status = 'ended'
             GROUP BY vc.id
             ORDER BY vc.started_at DESC

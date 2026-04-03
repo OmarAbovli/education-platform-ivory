@@ -154,11 +154,16 @@ export async function createTeacherAction(
 }
 
 // Existing admin APIs (unchanged)
-export async function getTeachersList() {
+export async function getTeachersList(params: { page?: number; limit?: number } = {}) {
   try {
+    const { page = 1, limit = 50 } = params
+    const offset = (page - 1) * limit
+
     const rows = (await sql`
       SELECT id, name, subject, bio, phone, avatar_url, username, theme_primary, theme_secondary
-      FROM users WHERE role = 'teacher' ORDER BY created_at DESC
+      FROM users WHERE role = 'teacher' 
+      ORDER BY created_at DESC
+      LIMIT ${limit} OFFSET ${offset}
     `) as any[]
     return rows
   } catch {
@@ -263,13 +268,37 @@ async function hasColumn(table: string, column: string) {
 }
 
 async function loadCreatorByColumn(studentIds: string[], columnName: string) {
-  // Requires that the column exists. Joins to users (teachers) to fetch creator name.
-  const rows = (await sql`
-    SELECT s.id AS student_id, s.${sql.raw(columnName)}::text AS creator_id, t.name AS creator_name
-    FROM users s
-    LEFT JOIN users t ON t.id = s.${sql.raw(columnName)}
-    WHERE s.role = 'student' AND s.id = ANY(${studentIds});
-  `) as any[]
+  let rows: any[] = []
+
+  // Safe approach: Use explicit queries for each allowed column to avoid dynamic SQL
+  switch (columnName) {
+    case "created_by_teacher_id":
+      rows = await sql`
+        SELECT s.id AS student_id, s.created_by_teacher_id::text AS creator_id, t.name AS creator_name
+        FROM users s LEFT JOIN users t ON t.id = s.created_by_teacher_id
+        WHERE s.role = 'student' AND s.id = ANY(${studentIds});`
+      break
+    case "created_by":
+      rows = await sql`
+        SELECT s.id AS student_id, s.created_by::text AS creator_id, t.name AS creator_name
+        FROM users s LEFT JOIN users t ON t.id = s.created_by
+        WHERE s.role = 'student' AND s.id = ANY(${studentIds});`
+      break
+    case "owner_teacher_id":
+      rows = await sql`
+        SELECT s.id AS student_id, s.owner_teacher_id::text AS creator_id, t.name AS creator_name
+        FROM users s LEFT JOIN users t ON t.id = s.owner_teacher_id
+        WHERE s.role = 'student' AND s.id = ANY(${studentIds});`
+      break
+    case "teacher_id":
+      rows = await sql`
+        SELECT s.id AS student_id, s.teacher_id::text AS creator_id, t.name AS creator_name
+        FROM users s LEFT JOIN users t ON t.id = s.teacher_id
+        WHERE s.role = 'student' AND s.id = ANY(${studentIds});`
+      break
+    default:
+      throw new Error("Invalid column name")
+  }
   const map = new Map<string, { id: string | null; name: string | null }>()
   for (const r of rows) {
     map.set(r.student_id, { id: r.creator_id ?? null, name: r.creator_name ?? null })
@@ -327,8 +356,11 @@ async function loadAccessTeachers(studentIds: string[]) {
   }
 }
 
-export async function getStudentsList(q?: string) {
+export async function getStudentsList(params: { q?: string; page?: number; limit?: number } = {}) {
   try {
+    const { q, page = 1, limit = 50 } = params
+    const offset = (page - 1) * limit
+
     const whereSearch =
       q && q.trim().length > 0
         ? sql`AND (name ILIKE ${"%" + q.trim() + "%"} OR username ILIKE ${"%" + q.trim() + "%"} OR email ILIKE ${
@@ -342,7 +374,7 @@ export async function getStudentsList(q?: string) {
       WHERE role = 'student'
       ${whereSearch}
       ORDER BY created_at DESC
-      LIMIT 200;
+      LIMIT ${limit} OFFSET ${offset};
     `) as any[]
 
     const ids = students.map((s) => s.id) as string[]

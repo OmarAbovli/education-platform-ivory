@@ -11,8 +11,18 @@ function usePrefersReducedMotion() {
 
 export function StudentHeroFX({ name = "Student", ctaHref = "#videos" }: { name?: string; ctaHref?: string }) {
   const [reduce, setReduce] = useState(false)
+  const [isVisible, setIsVisible] = useState(true)
+  
   useEffect(() => {
     setReduce(usePrefersReducedMotion())
+    
+    // Setup observer to pause rendering when scrolled away
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsVisible(entry.isIntersecting),
+      { threshold: 0.1 }
+    )
+    if (sceneRef.current) observer.observe(sceneRef.current)
+    return () => observer.disconnect()
   }, [])
   const sceneRef = useRef<HTMLDivElement | null>(null)
   const layerARef = useRef<HTMLDivElement | null>(null)
@@ -30,7 +40,7 @@ export function StudentHeroFX({ name = "Student", ctaHref = "#videos" }: { name?
   }, [])
 
   useEffect(() => {
-    if (reduce) return
+    if (reduce || !isVisible) return
     const scene = sceneRef.current
     const a = layerARef.current
     const b = layerBRef.current
@@ -45,7 +55,7 @@ export function StudentHeroFX({ name = "Student", ctaHref = "#videos" }: { name?
     }
     window.addEventListener("mousemove", onMove, { passive: true })
     return () => window.removeEventListener("mousemove", onMove)
-  }, [reduce])
+  }, [reduce, isVisible])
 
   return (
     <div
@@ -54,13 +64,19 @@ export function StudentHeroFX({ name = "Student", ctaHref = "#videos" }: { name?
     >
       <div
         ref={layerARef}
-        className="absolute -left-24 top-10 h-[420px] w-[420px] rounded-[45%_55%_60%_40%/45%_45%_55%_55%] bg-emerald-200/60 dark:bg-emerald-900/40 blur-3xl"
-        style={{ animation: reduce ? undefined : "blobMorph 12s ease-in-out infinite" }}
+        className="absolute -left-24 top-10 h-[420px] w-[420px] rounded-[45%_55%_60%_40%/45%_45%_55%_55%] bg-emerald-200/60 dark:bg-emerald-900/40 blur-3xl transition-transform duration-300 ease-out"
+        style={{ 
+          animation: reduce ? undefined : "blobMorph 12s ease-in-out infinite",
+          animationPlayState: isVisible ? "running" : "paused"
+        }}
       />
       <div
         ref={layerBRef}
-        className="absolute -right-24 top-24 h-[380px] w-[380px] rounded-[55%_45%_40%_60%/55%_55%_45%_45%] bg-teal-200/60 dark:bg-teal-900/40 blur-3xl"
-        style={{ animation: reduce ? undefined : "blobMorphAlt 14s ease-in-out infinite" }}
+        className="absolute -right-24 top-24 h-[380px] w-[380px] rounded-[55%_45%_40%_60%/55%_55%_45%_45%] bg-teal-200/60 dark:bg-teal-900/40 blur-3xl transition-transform duration-300 ease-out"
+        style={{ 
+          animation: reduce ? undefined : "blobMorphAlt 14s ease-in-out infinite",
+          animationPlayState: isVisible ? "running" : "paused"
+        }}
       />
 
       <div className="absolute inset-0 -z-10">
@@ -76,6 +92,7 @@ export function StudentHeroFX({ name = "Student", ctaHref = "#videos" }: { name?
               animation: reduce
                 ? undefined
                 : `twinkle ${star.duration}s ease-in-out ${star.delay}s infinite alternate`,
+              animationPlayState: isVisible ? "running" : "paused",
             }}
           />
         ))}
