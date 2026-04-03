@@ -1,6 +1,22 @@
 # Enterprise Educational Platform Architecture
 
-**Architected and Develop by: omarabovli**
+> [!IMPORTANT]
+> **⚠️ COPYRIGHT & LICENSE NOTICE**
+> 
+> This project is the proprietary property of **omarabovli** and **Ivory Software Solutions**. 
+> All rights are reserved globally.
+> 
+> **Educational Use Only:**
+> This repository is made public strictly for **educational purposes** and to showcase architectural design.
+> 
+> **Strict Prohibitions:**
+> - **No Commercial Use:** You are strictly prohibited from selling, profiting from, or using this code for any commercial gain.
+> - **No Redistribution:** You may not redistribute or claim this work as your own.
+> - **Legal Action:** Any unauthorized use, sale, or reproduction will be met with legal action to the fullest extent of the law.
+> 
+> For inquiries or permissions, please contact the owner. Refer to the [LICENSE](file:///g:/ivory-demo-platform/LICENSE) file for more details.
+
+**Architected and Developed by: [omarabovli](https://github.com/omarabovli)**
 
 This repository houses a state-of-the-art Learning Management System (LMS) designed for high-scale, secure, and interactive educational content delivery. Built on the principles of performance, security, and modularity, the platform serves as a generic foundation for any online education business, agnostic of the specific subject matter.
 
