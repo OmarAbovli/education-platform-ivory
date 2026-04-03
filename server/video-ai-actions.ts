@@ -27,10 +27,10 @@ export type VideoAiInsight = {
 
 async function getGeminiClient(teacherId: string) {
   const [user] = await sql`SELECT gemini_api_key FROM users WHERE id = ${teacherId} LIMIT 1` as any[]
-  const apiKey = user?.gemini_api_key || process.env.GEMINI_API_KEY
+  const apiKey = user?.gemini_api_key
   
   if (!apiKey) {
-    throw new Error("Gemini API Key not configured. Please add it in Teacher Settings.")
+    throw new Error("يرجى إضافة مفتاح Gemini API في إعدادات المنصة لتفعيل ميزات تحليل الفيديوهات والاختبارات التلقائية.")
   }
   
   return new GoogleGenerativeAI(apiKey)

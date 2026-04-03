@@ -526,6 +526,22 @@ export async function updateStudentPackages(studentId: string, packageIds: strin
   }
 }
 
+export async function getTeacherUser() {
+  try {
+    const teacherId = await requireTeacherId()
+    const [user] = await sql`
+      SELECT id, role, name, grade, avatar_url, username, gemini_api_key
+      FROM users
+      WHERE id = ${teacherId} AND role = 'teacher'
+      LIMIT 1;
+    ` as any[]
+    return user ?? null
+  } catch (e) {
+    console.error("getTeacherUser error", e)
+    return null
+  }
+}
+
 export async function updateTeacherSelf(input: UpdateTeacherSelfInput) {
   try {
     const teacherId = await requireTeacherId()

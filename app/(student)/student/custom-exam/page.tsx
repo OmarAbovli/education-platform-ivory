@@ -36,56 +36,73 @@ export default async function CustomExamPage() {
   })).filter((t: any) => t.packages.length > 0)
 
   return (
-    <main className="min-h-screen bg-slate-50/50">
-      <SiteHeader />
+    <main className="min-h-screen bg-white dark:bg-slate-950 relative overflow-hidden">
+      {/* Decorative Background Elements */}
+      <div className="absolute top-0 left-0 w-full h-[600px] bg-gradient-to-b from-emerald-500/10 via-indigo-500/5 to-transparent pointer-events-none" />
+      <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-emerald-500/10 blur-[120px] rounded-full pointer-events-none" />
+      <div className="absolute bottom-[-10%] left-[-5%] w-[500px] h-[500px] bg-indigo-500/10 blur-[120px] rounded-full pointer-events-none" />
       
-      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <header className="mb-10 space-y-4">
-           <div className="flex items-center gap-2 text-emerald-600 font-bold tracking-wider uppercase text-sm">
-              <Sparkles className="h-4 w-4" />
-              AI Learning Assistant
-           </div>
-           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-              <div className="space-y-2">
-                 <h1 className="text-4xl font-black text-slate-900 flex items-center gap-3">
-                    <Brain className="h-10 w-10 text-emerald-500" />
-                    منشئ الاختبارات المخصصة
-                 </h1>
-                 <p className="text-slate-500 max-w-2xl">
-                    Generate a comprehensive AI exam by selecting multiple lessons. Tailor the difficulty and focus to your needs.
-                 </p>
-              </div>
-              <div className="shrink-0">
-                 <Link href="/student/community-exams">
-                    <Button variant="outline" className="border-indigo-200 text-indigo-600 hover:bg-indigo-50 font-bold">
-                       <Users className="mr-2 h-4 w-4" /> Browse Shared Exams
-                    </Button>
-                 </Link>
-              </div>
-              <div className="flex -space-x-3 overflow-hidden">
-                 {[1, 2, 3].map((i) => (
-                   <div key={i} className="inline-block h-10 w-10 rounded-full ring-2 ring-white bg-emerald-100 flex items-center justify-center">
-                      <GraduationCap className="h-5 w-5 text-emerald-600" />
-                   </div>
-                 ))}
-                 <div className="flex items-center justify-center h-10 px-3 rounded-full bg-slate-900 text-white text-xs font-bold ring-2 ring-white">
-                    +150 Students
-                 </div>
-              </div>
-           </div>
-        </header>
-
-        <section className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-           {teachersData.length > 0 ? (
-             <CustomExamForm teachersData={teachersData} />
-           ) : (
-             <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-slate-300">
-                <Brain className="mx-auto h-12 w-12 text-slate-300 mb-4" />
-                <h2 className="text-xl font-bold text-slate-400">لا يوجد دروس متاحة حالياً</h2>
-                <p className="text-slate-400 text-sm">اشترك في باقات المدرسين لتتمكن من إنشاء اختبارات مخصصة.</p>
+      <div className="relative z-10">
+        <SiteHeader />
+        
+        <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
+          <header className="mb-12 space-y-6">
+             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold tracking-wider uppercase text-[10px]">
+                <Sparkles className="h-3 w-3" />
+                AI Learning Assistant
              </div>
-           )}
-        </section>
+             
+             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="space-y-3">
+                   <h1 className="text-4xl md:text-5xl font-black text-slate-900 dark:text-white flex items-center gap-4 tracking-tight">
+                      <div className="p-3 bg-emerald-500 rounded-2xl shadow-lg shadow-emerald-500/20">
+                         <Brain className="h-10 w-10 text-white" />
+                      </div>
+                      منشئ الاختبارات المخصصة
+                   </h1>
+                   <p className="text-slate-500 dark:text-slate-400 max-w-2xl text-lg leading-relaxed">
+                      Generate a comprehensive AI exam by selecting multiple lessons. Tailor the difficulty and focus to your needs.
+                   </p>
+                </div>
+                
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  <div className="flex -space-x-3 overflow-hidden">
+                     {[1, 2, 3].map((i) => (
+                       <div key={i} className="inline-block h-12 w-12 rounded-full ring-4 ring-white dark:ring-slate-900 bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+                          <GraduationCap className="h-6 w-6 text-emerald-500" />
+                       </div>
+                     ))}
+                     <div className="flex items-center justify-center h-12 px-4 rounded-full bg-slate-900 dark:bg-emerald-500 text-white text-xs font-black ring-4 ring-white dark:ring-slate-900">
+                        +150 Students
+                     </div>
+                  </div>
+                  
+                  <Link href="/student/community-exams">
+                     <Button variant="outline" className="h-12 px-6 border-slate-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 font-bold transition-all hover:scale-105 active:scale-95">
+                        <Users className="mr-2 h-5 w-5 text-indigo-500" /> Browse Shared Exams
+                     </Button>
+                  </Link>
+                </div>
+             </div>
+          </header>
+
+          <section className="animate-in fade-in slide-in-from-bottom-8 duration-1000 ease-out">
+             {teachersData.length > 0 ? (
+               <CustomExamForm teachersData={teachersData} />
+             ) : (
+               <div className="text-center py-32 glass-panel rounded-[2rem] border border-dashed border-slate-300 dark:border-slate-800 flex flex-col items-center">
+                  <div className="p-6 bg-slate-100 dark:bg-slate-900 rounded-3xl mb-6 text-slate-300 dark:text-slate-700">
+                     <Brain className="h-16 w-16" />
+                  </div>
+                  <h2 className="text-2xl font-black text-slate-400 dark:text-slate-600 mb-2">لا يوجد دروس متاحة حالياً</h2>
+                  <p className="text-slate-400 dark:text-slate-500 text-sm max-w-sm">اشترك في باقات المدرسين لتتمكن من استخدام منشئ الاختبارات الذكي.</p>
+                  <Button variant="link" className="mt-4 text-emerald-500 font-bold underline" asChild>
+                     <Link href="/">Explore Teachers</Link>
+                  </Button>
+               </div>
+             )}
+          </section>
+        </div>
       </div>
     </main>
   )

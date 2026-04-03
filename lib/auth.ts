@@ -9,7 +9,7 @@ export const getCurrentUser = cache(async (sessionId?: string) => {
       return null
     }
     const rows = (await sql`
-      SELECT u.id, u.role, u.name, u.grade, u.avatar_url, u.username
+      SELECT u.id, u.role, u.name, u.grade, u.avatar_url, u.username, u.gemini_api_key
       FROM sessions s
       JOIN users u ON u.id = s.user_id
       WHERE s.id = ${sessionId} AND s.expires_at > NOW()
