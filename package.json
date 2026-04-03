@@ -72,6 +72,8 @@
     "html5-qrcode": "^2.3.8",
     "input-otp": "1.4.1",
     "jose": "^6.2.2",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.7",
     "livekit-client": "^2.16.1",
     "livekit-server-sdk": "^2.15.0",
     "lucide-react": "^0.454.0",

@@ -28,7 +28,9 @@ type UploadVideoInput = {
   directPlayUrl?: string
   bunnyLibraryId?: string
   maxWatchCount?: number
-  watchLimitEnabled?: boolean // تفعيل/تعطيل حد المشاهدات (افتراضي true)
+  watchLimitEnabled?: boolean
+  aiChatEnabled?: boolean
+  aiPdfEnabled?: boolean
 }
 
 type CreateStudentInput = {
@@ -71,6 +73,7 @@ type UpdateTeacherSelfInput = {
   avatarUrl?: string
   themePrimary?: string
   themeSecondary?: string
+  gemini_api_key?: string
 }
 
 // Helpers
@@ -188,9 +191,9 @@ export async function uploadVideo(input: UploadVideoInput) {
     }
 
     await sql`
-      INSERT INTO videos (
         id, teacher_id, title, description, grades, url, category, 
-        is_free, package_id, thumbnail_url, max_watch_count, watch_limit_enabled
+        is_free, package_id, thumbnail_url, max_watch_count, watch_limit_enabled,
+        ai_chat_enabled, ai_pdf_enabled
       )
       VALUES (
         ${id},
@@ -204,7 +207,9 @@ export async function uploadVideo(input: UploadVideoInput) {
         ${input.packageId},
         ${input.thumbnailUrl ?? null},
         ${input.maxWatchCount ?? 3},
-        ${input.watchLimitEnabled ?? true}
+        ${input.watchLimitEnabled ?? true},
+        ${input.aiChatEnabled ?? true},
+        ${input.aiPdfEnabled ?? true}
       );
     `
 
@@ -533,7 +538,8 @@ export async function updateTeacherSelf(input: UpdateTeacherSelfInput) {
         subject = COALESCE(${input.subject}, subject),
         avatar_url = COALESCE(${input.avatarUrl}, avatar_url),
         theme_primary = COALESCE(${input.themePrimary}, theme_primary),
-        theme_secondary = COALESCE(${input.themeSecondary}, theme_secondary)
+        theme_secondary = COALESCE(${input.themeSecondary}, theme_secondary),
+        gemini_api_key = COALESCE(${input.gemini_api_key}, gemini_api_key)
       WHERE id = ${teacherId} AND role = 'teacher';
     `
     return true
@@ -706,6 +712,8 @@ export async function updateVideo(
     is_free?: boolean
     package_id?: string
     thumbnail_url?: string
+    ai_chat_enabled?: boolean
+    ai_pdf_enabled?: boolean
   },
 ): Promise<{ ok: true } | { ok: false; error?: string }> {
   try {
@@ -727,7 +735,9 @@ export async function updateVideo(
         category = COALESCE(${updates.category}, category),
         is_free = COALESCE(${updates.is_free}, is_free),
         package_id = COALESCE(${updates.package_id}, package_id),
-        thumbnail_url = COALESCE(${updates.thumbnail_url}, thumbnail_url)
+        thumbnail_url = COALESCE(${updates.thumbnail_url}, thumbnail_url),
+        ai_chat_enabled = COALESCE(${updates.ai_chat_enabled}, ai_chat_enabled),
+        ai_pdf_enabled = COALESCE(${updates.ai_pdf_enabled}, ai_pdf_enabled)
       WHERE id = ${videoId} AND teacher_id = ${teacherId}
       RETURNING id;
     `) as any[]

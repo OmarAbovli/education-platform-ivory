@@ -8,8 +8,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { getBunnyConfig, saveBunnyConfig, saveBunnyAccountKey, listBunnyLibraries } from "@/server/bunny-actions"
 import { getSnowSetting, toggleSnowSetting } from "@/server/teacher-actions"
 import { Switch } from "@/components/ui/switch"
+import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
-import { Loader2 } from "lucide-react"
+import { Loader2, Sparkles, Brain, Code } from "lucide-react"
+import { updateTeacherSelf } from "@/server/teacher-actions"
+import { getCurrentUser } from "@/lib/auth"
 
 export default function SettingsPage() {
     const [loading, setLoading] = useState(true)
@@ -24,6 +27,10 @@ export default function SettingsPage() {
     const [libraries, setLibraries] = useState<{ id: number, name: string, apiKey: string }[]>([])
     const [fetchingLibs, setFetchingLibs] = useState(false)
 
+    // AI Settings
+    const [geminiKey, setGeminiKey] = useState("")
+    const [savingAi, setSavingAi] = useState(false)
+
     useEffect(() => {
         getBunnyConfig().then(res => {
             if (res) {
@@ -35,6 +42,11 @@ export default function SettingsPage() {
                 }
             }
             setLoading(false)
+        })
+
+        // Fetch AI Config
+        getCurrentUser().then(user => {
+            if (user?.gemini_api_key) setGeminiKey(user.gemini_api_key)
         })
     }, [])
 
@@ -65,6 +77,14 @@ export default function SettingsPage() {
         setSaving(false)
         if (res.ok) toast.success("Configuration saved successfully!")
         else toast.error("Failed to save: " + res.error)
+    }
+
+    async function handleSaveAi() {
+        setSavingAi(true)
+        const ok = await updateTeacherSelf({ gemini_api_key: geminiKey })
+        setSavingAi(false)
+        if (ok) toast.success("AI Configuration updated! 🧠")
+        else toast.error("Failed to update AI settings")
     }
 
     return (
@@ -160,14 +180,54 @@ export default function SettingsPage() {
             </Card>
 
             {/* Visual Settings */}
-            <Card className="mt-8 bg-slate-950 border-slate-800 text-slate-100">
-                <CardHeader>
-                    <CardTitle className="text-xl text-blue-400">Seasonal Effects ❄️</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <SnowToggle />
-                </CardContent>
-            </Card>
+            <div className="grid gap-8 mt-8">
+                {/* AI Gemini Config */}
+                <Card className="bg-slate-950 border-slate-800 text-slate-100 overflow-hidden relative">
+                    <div className="absolute top-0 right-0 p-4 opacity-5">
+                       <Brain className="h-24 w-24 text-emerald-500" />
+                    </div>
+                    <CardHeader>
+                        <div className="flex items-center gap-2 mb-1">
+                           <Badge variant="outline" className="bg-emerald-500/10 text-emerald-500 border-emerald-500/20 text-[10px] font-bold">Recommended</Badge>
+                        </div>
+                        <CardTitle className="text-xl text-emerald-400 flex items-center gap-2">
+                           <Sparkles className="h-5 w-5" /> AI Learning Suite (Gemini)
+                        </CardTitle>
+                        <CardDescription className="text-slate-400">
+                           Configure Google Gemini to power lesson summaries, chatbots and assessment builders.
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="space-y-2">
+                            <Label className="flex items-center gap-2">
+                               <Code className="h-4 w-4 text-emerald-500" /> Gemini API Key
+                            </Label>
+                            <Input
+                                type="password"
+                                value={geminiKey}
+                                onChange={e => setGeminiKey(e.target.value)}
+                                placeholder="Paste your API key here..."
+                                className="bg-slate-900 border-slate-800 focus:border-emerald-500 transition-colors"
+                            />
+                            <p className="text-xs text-slate-500">
+                               Get your free API key from the <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-emerald-500 underline ml-1">Google AI Studio</a>.
+                            </p>
+                        </div>
+                        <Button onClick={handleSaveAi} disabled={savingAi} className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+                            {savingAi ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save AI Configuration"}
+                        </Button>
+                    </CardContent>
+                </Card>
+
+                <Card className="bg-slate-950 border-slate-800 text-slate-100">
+                    <CardHeader>
+                        <CardTitle className="text-xl text-blue-400">Seasonal Effects ❄️</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <SnowToggle />
+                    </CardContent>
+                </Card>
+            </div>
         </div>
     )
 }

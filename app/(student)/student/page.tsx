@@ -24,6 +24,8 @@ import { StudentVideoSections } from "@/components/student-video-sections"
 import { RecentlyWatchedCarousel } from "@/components/recently-watched-carousel"
 import { StudentLiveCallBanner } from "@/components/student-live-call-banner"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { ArrowRight, Brain, Sparkles, Users } from "lucide-react"
 
 export default async function StudentPage({ searchParams }: { searchParams?: { error?: string; category?: string } }) {
   const cookieStore = await cookies()
@@ -159,6 +161,40 @@ export default async function StudentPage({ searchParams }: { searchParams?: { e
             />
           </section>
         )}
+
+        {/* 🧠 AI Powered Custom Exam Portal */}
+        <section className="animate-in fade-in slide-in-from-right-5 duration-1000">
+          <Card className="border-none bg-gradient-to-br from-indigo-900 via-slate-900 to-emerald-900 text-white overflow-hidden relative shadow-2xl">
+            <div className="absolute top-0 right-0 p-8 opacity-20 group-hover:opacity-40 transition-opacity">
+               <Brain className="h-32 w-32 text-emerald-400" />
+            </div>
+            <CardContent className="p-8 relative z-10">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+                <div className="space-y-3 text-center md:text-left">
+                  <Badge className="bg-emerald-500 text-white border-none px-3 py-1 text-[10px] font-black tracking-widest uppercase mb-2">
+                     <Sparkles className="h-3 w-3 mr-1" /> New Beta
+                  </Badge>
+                  <h2 className="text-3xl font-black tracking-tight">AI Custom Exam Builder</h2>
+                  <p className="text-slate-300 max-w-md text-sm leading-relaxed">
+                     Select multiple lessons and let the AI generate a personalized exam to test your level and identify your weak points.
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <Link href="/student/custom-exam">
+                    <Button size="lg" className="bg-white text-indigo-900 hover:bg-emerald-50 font-bold px-8 h-14 rounded-2xl shadow-xl shadow-black/20 group">
+                      Start AI Training <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                    </Button>
+                  </Link>
+                  <Link href="/student/community-exams">
+                    <Button size="lg" variant="outline" className="bg-transparent border-white/20 text-white hover:bg-white/10 font-bold px-6 h-14 rounded-2xl">
+                      <Users className="mr-2 h-5 w-5" /> Browse Community
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </section>
 
         {/* 📚 Video Library with Instant Search */}
         <section id="videos" className="space-y-6">

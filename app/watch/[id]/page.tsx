@@ -66,8 +66,11 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { getCurrentUser } from "@/lib/auth"
-import { FileText, PencilRuler } from "lucide-react"
+import { FileText, PencilRuler, Sparkles, MessageSquare, Download, PlayCircle } from "lucide-react"
 import { cookies } from "next/headers"
+import { AiInsightDisplay } from "@/components/ai/ai-insight-display"
+import { AiVideoChatbot } from "@/components/ai/ai-video-chatbot"
+import { sql } from "@/server/db"
 
 type PageProps = { params: { id: string } }
 
@@ -109,12 +112,18 @@ export default async function WatchPage({ params }: PageProps) {
   }
 
   // Fetch access, resources, quizzes, and comments in parallel
-  const [access, resources, quizzes, comments] = await Promise.all([
+  const [access, resources, quizzes, comments, insightsResult] = await Promise.all([
     user ? checkVideoAccess(videoId, user.id) : Promise.resolve({ allowed: false, reason: 'login-required' as const }),
     getResourcesForVideo(videoId),
     getQuizzesForVideo(videoId),
     getVideoComments(videoId),
+    sql`SELECT * FROM video_ai_insights WHERE video_id = ${videoId} LIMIT 1` as any
   ])
+
+  const insights = insightsResult?.[0] || null
+  const isTeacher = user?.role === 'teacher'
+  const aiChatEnabled = video.ai_chat_enabled ?? true
+  const aiPdfEnabled = video.ai_pdf_enabled ?? true
 
   const waUrl = makeWaUrl(video.title, video.teacher_name)
 
@@ -200,46 +209,70 @@ export default async function WatchPage({ params }: PageProps) {
           </CardContent>
         </Card>
 
-        {/* Resources Section */}
-        {access.allowed && resources.length > 0 && (
-          <div>
-            <h2 className="mb-3 text-lg font-semibold flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Resources
-            </h2>
-            <div className="grid gap-3">
-              {resources.map((resource) => (
-                <a
-                  key={resource.id}
-                  href={resource.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block rounded-md border bg-card p-3 transition hover:shadow-md"
-                >
-                  <p className="font-medium">{resource.title}</p>
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* AI Learning Suite - Student View */}
+        {access.allowed && (
+          <div className="grid gap-6 lg:grid-cols-3">
+            {/* Main AI Insights (Summary, PDF, Points) */}
+            <div className="lg:col-span-2 space-y-6">
+              {aiPdfEnabled && (
+                <AiInsightDisplay 
+                  videoId={videoId} 
+                  isTeacher={isTeacher} 
+                  initialInsights={insights} 
+                />
+              )}
 
-        {/* Quizzes Section */}
-        {access.allowed && quizzes.length > 0 && (
-          <div>
-            <h2 className="mb-3 text-lg font-semibold flex items-center gap-2">
-              <PencilRuler className="h-5 w-5" />
-              Quizzes
-            </h2>
-            <div className="grid gap-3">
-              {quizzes.map((quiz) => (
-                <Link
-                  key={quiz.id}
-                  href={`/quiz/${quiz.id}`}
-                  className="block rounded-md border bg-card p-3 transition hover:shadow-md"
-                >
-                  <p className="font-medium">{quiz.title}</p>
-                </Link>
-              ))}
+              {/* Resources Section - Moved here if AI enabled for better flow */}
+              {resources.length > 0 && (
+                <div className="rounded-xl border bg-card p-6 shadow-sm">
+                  <h2 className="mb-4 text-lg font-bold flex items-center gap-2 text-slate-800">
+                    <FileText className="h-5 w-5 text-emerald-600" />
+                    Lecture Resources
+                  </h2>
+                  <div className="grid gap-3">
+                    {resources.map((resource) => (
+                      <a
+                        key={resource.id}
+                        href={resource.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between p-4 rounded-lg bg-slate-50 border border-slate-100 hover:border-emerald-200 hover:bg-emerald-50/30 transition-all group"
+                      >
+                        <span className="font-medium text-slate-700 group-hover:text-emerald-700">{resource.title}</span>
+                        <Download className="h-4 w-4 text-slate-400 group-hover:text-emerald-500" />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* AI Side Panel (Chatbot & Quizzes) */}
+            <div className="space-y-6">
+              {aiChatEnabled && (
+                <AiVideoChatbot videoId={videoId} videoTitle={video.title} />
+              )}
+              
+              {quizzes.length > 0 && (
+                <div className="rounded-xl border bg-card p-6 shadow-sm">
+                  <h2 className="mb-4 text-lg font-bold flex items-center gap-2 text-slate-800">
+                    <PencilRuler className="h-5 w-5 text-emerald-600" />
+                    Practice Quizzes
+                  </h2>
+                  <div className="grid gap-3">
+                    {quizzes.map((quiz) => (
+                      <Link
+                        key={quiz.id}
+                        href={`/quiz/${quiz.id}`}
+                        className="flex items-center justify-between p-4 rounded-lg bg-slate-50 border border-slate-100 hover:border-emerald-200 hover:bg-emerald-50/30 transition-all group"
+                      >
+                        <span className="font-medium text-slate-700 group-hover:text-emerald-700">{quiz.title}</span>
+                        <PlayCircle className="h-4 w-4 text-slate-400 group-hover:text-emerald-500" />
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

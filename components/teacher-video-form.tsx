@@ -20,6 +20,7 @@ import { Loader2 } from "lucide-react"
 import { VideoPackage } from "@/server/package-actions"
 import { useEffect } from "react"
 import { generateProfessionalThumbnail } from "@/server/ai-actions"
+import { cn } from "@/lib/utils"
 
 const gradeOptions = [
   { label: "First year", value: 1 },
@@ -76,6 +77,8 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
   const [thumbnailUrl, setThumbnailUrl] = useState("")
   const [maxWatchCount, setMaxWatchCount] = useState(3)
   const [watchLimitEnabled, setWatchLimitEnabled] = useState(true)
+  const [aiChatEnabled, setAiChatEnabled] = useState(true)
+  const [aiPdfEnabled, setAiPdfEnabled] = useState(true)
   const [isPending, startTransition] = useTransition()
 
   // Bunny metadata state (Video ID flow)
@@ -234,6 +237,8 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
             bunnyLibraryId: uploadedLibraryId || (sourceType === "bunny_id" ? selectedLibraryId : undefined),
             maxWatchCount,
             watchLimitEnabled,
+            aiChatEnabled,
+            aiPdfEnabled,
           })
           if (res?.ok) {
             console.log("Video saved successfully:", res)
@@ -419,7 +424,12 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
             <Label>Free video</Label>
             <span className="text-xs text-muted-foreground">Free videos appear on the homepage.</span>
           </div>
-          <Switch checked={isFree} onCheckedChange={setIsFree} />
+          <div className="flex items-center gap-3">
+            <span className={cn("text-[10px] font-bold", isFree ? "text-emerald-500" : "text-slate-400")}>
+              {isFree ? "مفعل (Enabled)" : "معطل"}
+            </span>
+            <Switch checked={isFree} onCheckedChange={setIsFree} />
+          </div>
         </div>
       </div>
 
@@ -521,11 +531,16 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
               Limit how many times students can watch this video
             </p>
           </div>
-          <Switch
-            id="watch-limit"
-            checked={watchLimitEnabled}
-            onCheckedChange={setWatchLimitEnabled}
-          />
+          <div className="flex items-center gap-3">
+             <span className={cn("text-[10px] font-bold", watchLimitEnabled ? "text-emerald-500" : "text-slate-400")}>
+               {watchLimitEnabled ? "مفعل (Limit Active)" : "معطل"}
+             </span>
+             <Switch
+               id="watch-limit"
+               checked={watchLimitEnabled}
+               onCheckedChange={setWatchLimitEnabled}
+             />
+          </div>
         </div>
 
         {watchLimitEnabled && (
@@ -548,6 +563,36 @@ export function TeacherVideoForm({ packages }: { packages: VideoPackage[] }) {
             </p>
           </div>
         )}
+
+        <div className="space-y-4 rounded-lg border p-4 bg-emerald-50/30 border-emerald-100">
+          <h3 className="text-sm font-semibold text-emerald-800">AI Learning Suite Toggles</h3>
+          
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="ai-chat">AI Interactive Chatbot</Label>
+              <p className="text-[10px] text-muted-foreground">Allow students to ask questions about this video</p>
+            </div>
+            <div className="flex items-center gap-3">
+               <span className={cn("text-[10px] font-bold", aiChatEnabled ? "text-emerald-500" : "text-slate-400")}>
+                  {aiChatEnabled ? "مفعل" : "معطل"}
+               </span>
+               <Switch id="ai-chat" checked={aiChatEnabled} onCheckedChange={setAiChatEnabled} />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between border-t pt-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="ai-pdf">AI PDF Study Guide</Label>
+              <p className="text-[10px] text-muted-foreground">Automatically generate AR/EN summaries & notes</p>
+            </div>
+            <div className="flex items-center gap-3">
+               <span className={cn("text-[10px] font-bold", aiPdfEnabled ? "text-emerald-500" : "text-slate-400")}>
+                  {aiPdfEnabled ? "مفعل" : "معطل"}
+               </span>
+               <Switch id="ai-pdf" checked={aiPdfEnabled} onCheckedChange={setAiPdfEnabled} />
+            </div>
+          </div>
+        </div>
       </div>
 
       <Button disabled={isPending || isUploading || !packageId || !title || !videoUrl} type="submit">

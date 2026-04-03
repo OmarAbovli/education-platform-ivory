@@ -81,9 +81,10 @@ export default async function TeacherPage() {
     avatar_url: "",
     theme_primary: "#10b981",
     theme_secondary: "#14b8a6",
+    gemini_api_key: "",
   }
   const rows = (await sql`
-    SELECT name, phone, bio, subject, avatar_url, theme_primary, theme_secondary
+    SELECT name, phone, bio, subject, avatar_url, theme_primary, theme_secondary, gemini_api_key
     FROM users WHERE id = ${me.id} LIMIT 1;
   `) as any[]
   if (rows[0]) {
@@ -95,6 +96,7 @@ export default async function TeacherPage() {
       avatar_url: rows[0].avatar_url ?? "",
       theme_primary: rows[0].theme_primary ?? "#10b981",
       theme_secondary: rows[0].theme_secondary ?? "#14b8a6",
+      gemini_api_key: rows[0].gemini_api_key ?? "",
     }
   }
 

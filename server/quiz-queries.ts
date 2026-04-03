@@ -1,6 +1,6 @@
 'use server'
 
-import { sql } from '@/server/db'
+import { sql, pool } from '@/server/db'
 
 // Fisher-Yates shuffle algorithm
 function shuffle(array: any[]) {
@@ -13,13 +13,13 @@ function shuffle(array: any[]) {
 
 export async function getQuizForStudent(quizId: string) {
   const [quiz] = await sql`
-    SELECT id, title, video_id, description, time_limit_minutes, shuffle_questions, shuffle_options
-    FROM quizzes WHERE id = ${quizId} AND quiz_type = 'native';
+    SELECT id, title, video_id, description, time_limit_minutes, shuffle_questions, shuffle_options, quiz_type
+    FROM quizzes WHERE id = ${quizId};
   `
   if (!quiz) return null
-
+ 
   let questions = await sql`
-    SELECT id, question_text, "order", options
+    SELECT id, question_text, "order", options, feedback
     FROM questions
     WHERE quiz_id = ${quizId}
     ORDER BY "order" ASC;
@@ -29,12 +29,17 @@ export async function getQuizForStudent(quizId: string) {
     questions = shuffle(questions)
   }
 
-  // Remove the is_correct flag from the options before sending to the client
-  const sanitizedQuestions = questions.map((q) => ({
+  // If it's an AI quiz, we can include the is_correct flag for "Instant Feedback" learning mode
+  // Otherwise, we sanitize it for formal exams.
+  const isAi = quiz.quiz_type?.startsWith('ai_');
+  
+  const sanitizedQuestions = questions.map((q: any) => ({
     ...q,
-    // TODO: Fix shuffling. The index of the shuffled option on the client doesn't match the server index.
-    // For now, we disable shuffling to ensure grading is correct.
-    options: q.options.map((o: any) => ({ text: o.text })),
+    options: q.options.map((o: any) => {
+      const opt: any = { text: o.text };
+      if (isAi) opt.is_correct = o.is_correct;
+      return opt;
+    }),
   }))
 
   return { ...quiz, questions: sanitizedQuestions }
@@ -47,7 +52,27 @@ export async function getQuizResults(
     videoId?: string
   } = {}
 ) {
-  let query = sql`
+  if (!pool) throw new Error("Database pool not configured");
+
+  let whereClauses = []
+  let params = []
+  
+  if (filters.grade) {
+    whereClauses.push(`s.grade = $${params.length + 1}`)
+    params.push(filters.grade)
+  }
+  if (filters.month) {
+    whereClauses.push(`v.month = $${params.length + 1}`)
+    params.push(filters.month)
+  }
+  if (filters.videoId) {
+    whereClauses.push(`v.id = $${params.length + 1}`)
+    params.push(filters.videoId)
+  }
+
+  const whereStr = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : ''
+
+  const { rows: results } = await pool.query(`
     SELECT
       qs.id AS submission_id,
       qs.score,
@@ -63,26 +88,9 @@ export async function getQuizResults(
     JOIN users s ON s.id = qs.student_id
     JOIN quizzes q ON q.id = qs.quiz_id
     LEFT JOIN videos v ON v.id = q.video_id
-  `
-
-  const whereClauses = []
-  if (filters.grade) {
-    whereClauses.push(sql`s.grade = ${filters.grade}`)
-  }
-  if (filters.month) {
-    whereClauses.push(sql`v.month = ${filters.month}`)
-  }
-  if (filters.videoId) {
-    whereClauses.push(sql`v.id = ${filters.videoId}`)
-  }
-
-  if (whereClauses.length > 0) {
-    query = sql`${query} WHERE ${sql.join(whereClauses, sql` AND `)}`
-  }
-
-  query = sql`${query} ORDER BY qs.submitted_at DESC`
-
-  const results = await query
+    ${whereStr}
+    ORDER BY qs.submitted_at DESC
+  `, params);
 
   return results
 }
@@ -91,7 +99,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { cookies } from "next/headers";
 
 export async function getQuizzesByTeacher() {
-    const cookieStore = cookies()
+    const cookieStore = await cookies()
     const sessionCookie = cookieStore.get("session_id")?.value
     const user = await getCurrentUser(sessionCookie)
     if (!user || (user.role !== 'admin' && user.role !== 'teacher')) {
@@ -114,7 +122,7 @@ export async function getQuizzesByTeacher() {
 }
 
 export async function getQuizForEditing(quizId: string) {
-    const cookieStore = cookies()
+    const cookieStore = await cookies()
     const sessionCookie = cookieStore.get("session_id")?.value
     const user = await getCurrentUser(sessionCookie)
     if (!user || (user.role !== 'admin' && user.role !== 'teacher')) {
@@ -175,4 +183,34 @@ export async function getQuizSubmission(submissionId: string) {
   })
 
   return { ...submission, quiz, questions: detailedQuestions }
+}
+
+/**
+ * 🌍 Get Community Shared AI Exams (Grade-Specific)
+ */
+export async function getCommunityQuizzes() {
+  const cookieStore = await cookies()
+  const sessionId = cookieStore.get("session_id")?.value
+  const user = await getCurrentUser(sessionId)
+  if (!user) return []
+
+  const quizzes = await sql`
+    SELECT 
+      q.id,
+      q.title,
+      q.description,
+      q.time_limit_minutes,
+      q.passing_score,
+      q.created_at,
+      u.name as creator_name,
+      (SELECT COUNT(*) FROM questions WHERE quiz_id = q.id) as question_count,
+      (SELECT COUNT(*) FROM quiz_submissions WHERE quiz_id = q.id) as total_enrollment
+    FROM quizzes q
+    JOIN users u ON u.id = q.student_creator_id
+    WHERE q.quiz_type = 'ai_custom'
+      AND q.grade = ${user.grade}
+    ORDER BY q.created_at DESC
+    LIMIT 50;
+  `
+  return quizzes
 }

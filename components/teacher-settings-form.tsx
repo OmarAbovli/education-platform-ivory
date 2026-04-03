@@ -18,6 +18,7 @@ type Props = {
     avatar_url: string
     theme_primary: string
     theme_secondary: string
+    gemini_api_key: string
   }
 }
 
@@ -30,6 +31,7 @@ export function TeacherSettingsForm({
     avatar_url: "",
     theme_primary: "#10b981",
     theme_secondary: "#14b8a6",
+    gemini_api_key: "",
   },
 }: Props) {
   const { toast } = useToast()
@@ -41,6 +43,7 @@ export function TeacherSettingsForm({
   const [avatarUrl, setAvatarUrl] = useState(initial.avatar_url)
   const [primary, setPrimary] = useState(initial.theme_primary || "#10b981")
   const [secondary, setSecondary] = useState(initial.theme_secondary || "#14b8a6")
+  const [geminiKey, setGeminiKey] = useState(initial.gemini_api_key || "")
 
   return (
     <form
@@ -55,6 +58,7 @@ export function TeacherSettingsForm({
             avatarUrl,
             themePrimary: primary,
             themeSecondary: secondary,
+            gemini_api_key: geminiKey,
           })
           toast({
             title: ok ? "Saved" : "Error",
@@ -96,6 +100,24 @@ export function TeacherSettingsForm({
           <Label>Theme (secondary)</Label>
           <Input type="color" value={secondary} onChange={(e) => setSecondary(e.target.value)} />
         </div>
+      </div>
+
+      {/* AI Settings Section */}
+      <div className="border-t pt-6 mt-2">
+         <h3 className="text-lg font-semibold mb-2">AI Learning Suite Configuration</h3>
+         <div className="space-y-2">
+            <Label>Google Gemini API Key</Label>
+            <Input 
+              type="password" 
+              placeholder="Enter your Gemini 1.5 API Key here..." 
+              value={geminiKey} 
+              onChange={(e) => setGeminiKey(e.target.value)} 
+            />
+            <p className="text-xs text-muted-foreground">
+              Used for generating video summaries, study guides, and the interactive learning chatbot.
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" className="ml-1 text-emerald-600 underline">Get a free key here.</a>
+            </p>
+         </div>
       </div>
       <div>
         <Button disabled={isPending} type="submit">

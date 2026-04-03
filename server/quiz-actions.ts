@@ -1,6 +1,6 @@
 'use server'
 
-import { sql } from '@/server/db'
+import { sql, pool } from '@/server/db'
 import { getCurrentUser } from '@/lib/auth'
 import { cookies } from 'next/headers'
 import { randomUUID } from 'crypto'
@@ -170,57 +170,67 @@ export async function updateQuiz(
     throw new Error('Forbidden');
   }
 
-  await sql.transaction(async tx => {
+  if (!pool) throw new Error("Database pool not configured");
+  
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
     // 1. Update the quiz settings
-    await tx`
+    await client.query(`
       UPDATE quizzes
       SET
-        title = ${data.title},
-        video_id = ${data.videoId},
-        description = ${data.description},
-        max_attempts = ${data.max_attempts},
-        passing_score = ${data.passing_score},
-        shuffle_questions = ${data.shuffle_questions},
-        shuffle_options = ${data.shuffle_options},
-        time_limit_minutes = ${data.time_limit_minutes}
-      WHERE id = ${quizId};
-    `;
+        title = $1,
+        video_id = $2,
+        description = $3,
+        max_attempts = $4,
+        passing_score = $5,
+        shuffle_questions = $6,
+        shuffle_options = $7,
+        time_limit_minutes = $8
+      WHERE id = $9
+    `, [
+      data.title, data.videoId, data.description, data.max_attempts, 
+      data.passing_score, data.shuffle_questions, data.shuffle_options, 
+      data.time_limit_minutes, quizId
+    ]);
 
     // 2. Reconcile questions
-    const existingQuestions = await tx`SELECT id FROM questions WHERE quiz_id = ${quizId}`;
-    const existingQuestionIds = new Set(existingQuestions.map(q => q.id));
-    const incomingQuestionIds = new Set(data.questions.map(q => q.id).filter(id => id)); // Get IDs of incoming questions that have one
+    const { rows: existingQuestions } = await client.query('SELECT id FROM questions WHERE quiz_id = $1', [quizId]);
+    const existingQuestionIds = new Set(existingQuestions.map((q: any) => q.id));
+    const incomingQuestionIds = new Set(data.questions.map(q => q.id).filter(id => id));
 
-    // 2a. Delete questions that are no longer present
-    for (const existingId of existingQuestionIds) {
+    // 2a. Delete
+    for (const existingId of Array.from(existingQuestionIds)) {
       if (!incomingQuestionIds.has(existingId)) {
-        await tx`DELETE FROM questions WHERE id = ${existingId}`;
+        await client.query('DELETE FROM questions WHERE id = $1', [existingId]);
       }
     }
 
-    // 2b. Update existing questions and insert new ones
+    // 2b. Update/Insert
     for (const q of data.questions) {
       if (q.id && existingQuestionIds.has(q.id)) {
-        // Update existing question
-        await tx`
+        await client.query(`
           UPDATE questions
-          SET
-            question_text = ${q.question_text},
-            "order" = ${q.order},
-            options = ${JSON.stringify(q.options)},
-            feedback = ${q.feedback}
-          WHERE id = ${q.id};
-        `;
+          SET question_text = $1, "order" = $2, options = $3, feedback = $4
+          WHERE id = $5
+        `, [q.question_text, q.order, JSON.stringify(q.options), q.feedback, q.id]);
       } else {
-        // Insert new question
         const newQuestionId = "qq_" + randomUUID();
-        await tx`
+        await client.query(`
           INSERT INTO questions (id, quiz_id, question_text, "order", options, feedback)
-          VALUES (${newQuestionId}, ${quizId}, ${q.question_text}, ${q.order}, ${JSON.stringify(q.options)}, ${q.feedback});
-        `;
+          VALUES ($1, $2, $3, $4, $5, $6)
+        `, [newQuestionId, quizId, q.question_text, q.order, JSON.stringify(q.options), q.feedback]);
       }
     }
-  });
+
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 
   return { success: true };
 }
@@ -317,13 +327,19 @@ export async function getQuizSubmissionDetails(quizId: string, submissionId: str
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get("session_id")?.value;
   const user = await getCurrentUser(sessionCookie);
-  if (!user || (user.role !== 'admin' && user.role !== 'teacher')) {
-    throw new Error('Unauthorized');
+  if (!user) throw new Error('Unauthorized');
+  
+  const [submissionCheck] = await sql`SELECT student_id FROM quiz_submissions WHERE id = ${submissionId} LIMIT 1` as any[];
+  const isOwner = submissionCheck?.student_id === user.id;
+  const isStaff = user.role === 'admin' || user.role === 'teacher';
+
+  if (!isOwner && !isStaff) {
+    throw new Error('Unauthorized access to this submission.');
   }
 
   // Fetch quiz details
   const [quiz] = await sql`
-    SELECT id, title FROM quizzes WHERE id = ${quizId};
+    SELECT id, title, video_id FROM quizzes WHERE id = ${quizId};
   `;
   if (!quiz) {
     return null;
